@@ -151,6 +151,7 @@ export default function AdminApp() {
   const [selectedUser,setSelectedUser] = useState(null);
   const [users,setUsers]           = useState([]);
   const [invoices,setInvoices]     = useState([]);
+  const [activities,setActivities] = useState({});
   const [supportNotes,setSupportNotes] = useState({});
   const [signups,setSignups]       = useState([]);
   const [noteText,setNoteText]     = useState("");
@@ -164,9 +165,10 @@ export default function AdminApp() {
     setDataLoading(true);
     try {
       // Fetch profiles, invoices, support notes, signups in parallel
-      const [profilesRes, invoicesRes, notesRes, signupsRes] = await Promise.all([
+      const [profilesRes, invoicesRes, activitiesRes, notesRes, signupsRes] = await Promise.all([
         supabase.from("profiles").select("*"),
         supabase.from("invoices").select("*"),
+        supabase.from("activities").select("*").order("activity_date", { ascending: false }),
         supabase.from("support_notes").select("*").order("created_at", { ascending: false }),
         supabase.from("signups").select("*").order("created_at", { ascending: false }),
       ]);
@@ -182,6 +184,22 @@ export default function AdminApp() {
         status: inv.status,
         date: inv.issue_date || (inv.created_at ? inv.created_at.split("T")[0] : ""),
       })));
+
+      // Build activities grouped by user_id
+      const activitiesMap = {};
+      (activitiesRes.data || []).forEach(a => {
+        const uid = a.user_id;
+        if (!activitiesMap[uid]) activitiesMap[uid] = [];
+        activitiesMap[uid].push({
+          id: a.id,
+          type: a.type,
+          text: a.text,
+          date: a.activity_date,
+          user: a.created_by || "—",
+          clientId: a.client_id,
+        });
+      });
+      setActivities(activitiesMap);
 
       // Build support notes grouped by user_id
       const notesMap = {};
@@ -435,8 +453,11 @@ export default function AdminApp() {
     );
   };
 
+  const ACTIVITY_ICONS = { email:"✉", call:"📞", note:"📝", meeting:"🤝", demo:"💻", follow_up:"🔔" };
+
   const renderCustomerDetail = (u) => {
     const userInvoices = invoices.filter(inv => inv.userId === u.id);
+    const userActivities = activities[u.id] || [];
     const notes = supportNotes[u.id]||[];
     return (
       <div style={{padding:24,flex:1,overflowY:"auto"}}>
@@ -522,6 +543,29 @@ export default function AdminApp() {
                   </div>
                 </div>
               ))}
+            </div>
+
+            {/* CRM Activity */}
+            <div style={{fontWeight:600,fontSize:14,marginBottom:10}}>CRM Activity ({userActivities.length})</div>
+            <div style={{...card(),marginBottom:16}}>
+              {userActivities.length===0 ? (
+                <div style={{fontSize:13,color:C.text3,padding:"8px 0"}}>No CRM activity recorded</div>
+              ) : userActivities.slice(0,15).map((act,i)=>(
+                <div key={act.id} style={{display:"flex",gap:12,padding:"10px 0",borderBottom:i<Math.min(userActivities.length,15)-1?`0.5px solid ${C.border}`:"none"}}>
+                  <div style={{width:30,height:30,borderRadius:"50%",background:C.bg2,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,flexShrink:0}}>
+                    {ACTIVITY_ICONS[act.type]||"📝"}
+                  </div>
+                  <div style={{flex:1}}>
+                    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:2}}>
+                      <span style={{fontSize:12,fontWeight:600,color:C.text2,textTransform:"capitalize"}}>{act.type?.replace("_"," ")}</span>
+                      <span style={{fontSize:11,color:C.text3}}>by {act.user}</span>
+                    </div>
+                    <div style={{fontSize:13,color:C.text,lineHeight:1.5}}>{act.text}</div>
+                  </div>
+                  <div style={{fontSize:11,color:C.text3,flexShrink:0}}>{fmtDate(act.date)}</div>
+                </div>
+              ))}
+              {userActivities.length>15 && <div style={{fontSize:12,color:C.text3,paddingTop:8}}>+ {userActivities.length-15} more entries</div>}
             </div>
 
             {/* Support notes */}
