@@ -52,34 +52,54 @@ exports.handler = async (event) => {
 
   console.log(`Stripe event: ${stripeEvent.type}`);
 
-  // checkout.session.completed — fires when client pays via Payment Link
+  // Supabase client for DB updates
+  const { createClient } = require("@supabase/supabase-js");
+  const supabase = createClient(process.env.VITE_SUPABASE_URL, process.env.VITE_SUPABASE_ANON_KEY, {
+    auth: { persistSession: false },
+    global: { headers: { apikey: process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY } },
+  });
+
+  // checkout.session.completed — fires for both invoice payments and subscriptions
   if (stripeEvent.type === "checkout.session.completed") {
     const session = stripeEvent.data.object;
+
+    // Handle subscription checkout
+    if (session.mode === "subscription" && session.metadata?.user_id) {
+      const userId = session.metadata.user_id;
+      const plan = session.metadata.plan;
+      const customerId = session.customer;
+      console.log(`Subscription started: ${plan} for user ${userId} (customer ${customerId})`);
+
+      const { error: subError } = await supabase.from("profiles").update({
+        plan,
+        stripe_customer_id: customerId,
+      }).eq("id", userId);
+
+      if (subError) console.error("Failed to update plan in DB:", subError.message);
+      else console.log(`Profile ${userId} updated to ${plan}`);
+    }
+
+    // Handle invoice payment
     const invoiceNumber = session.metadata?.invoice_number;
-    const clientEmail   = session.customer_details?.email || session.metadata?.client_email;
-    const clientName    = session.customer_details?.name  || session.metadata?.client_name;
-    const amountPaid    = ((session.amount_total || 0) / 100).toFixed(2);
+    if (invoiceNumber) {
+      const clientEmail = session.customer_details?.email || session.metadata?.client_email;
+      const clientName  = session.customer_details?.name  || session.metadata?.client_name;
+      const amountPaid  = ((session.amount_total || 0) / 100).toFixed(2);
 
-    console.log(`Payment completed: ${invoiceNumber} — $${amountPaid} from ${clientEmail}`);
+      console.log(`Payment completed: ${invoiceNumber} — $${amountPaid} from ${clientEmail}`);
 
-    // Update invoice status in Supabase
-    const { createClient } = require("@supabase/supabase-js");
-    const supabase = createClient(process.env.VITE_SUPABASE_URL, process.env.VITE_SUPABASE_ANON_KEY, {
-      auth: { persistSession: false },
-      global: { headers: { apikey: process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY } },
-    });
+      const { error: dbError } = await supabase
+        .from("invoices")
+        .update({ status: "paid", paid_at: new Date().toISOString() })
+        .eq("invoice_number", invoiceNumber);
 
-    const { error: dbError } = await supabase
-      .from("invoices")
-      .update({ status: "paid", paid_at: new Date().toISOString() })
-      .eq("invoice_number", invoiceNumber);
+      if (dbError) console.error("Failed to update invoice in DB:", dbError.message);
+      else console.log(`Invoice ${invoiceNumber} marked paid in DB`);
 
-    if (dbError) console.error("Failed to update invoice in DB:", dbError.message);
-    else console.log(`Invoice ${invoiceNumber} marked paid in DB`);
-
-    await sendLoopsEmail(process.env.LOOPS_PAID_EMAIL_ID, clientEmail, {
-      invoiceNumber, amountPaid, clientName,
-    });
+      await sendLoopsEmail(process.env.LOOPS_PAID_EMAIL_ID, clientEmail, {
+        invoiceNumber, amountPaid, clientName,
+      });
+    }
   }
 
   // payment_intent.succeeded — fallback; metadata reliably present via payment_intent_data (v2 fix)
