@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PalletBill — Invoicing + CRM for 3PLs</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#1a1a18;background:#f4f4f1;-webkit-font-smoothing:antialiased}
+a{text-decoration:none;color:inherit}
+
+.container{max-width:1080px;margin:0 auto;padding:0 24px}
+
+/* NAV */
+nav{background:#fff;border-bottom:0.5px solid rgba(0,0,0,0.09);padding:14px 0;position:sticky;top:0;z-index:100}
+nav .inner{display:flex;align-items:center;justify-content:space-between;max-width:1080px;margin:0 auto;padding:0 24px}
+.logo{font-size:19px;font-weight:800;letter-spacing:-0.5px}
+.logo span{color:#1D9E75}
+nav .links{display:flex;gap:24px;align-items:center}
+nav .links a{font-size:14px;color:#5a5a56;font-weight:500}
+nav .links a:hover{color:#1D9E75}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:9px 20px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;border:none;font-family:inherit;transition:opacity 0.15s}
+.btn-primary{background:#1D9E75;color:#fff}
+.btn-primary:hover{opacity:0.9}
+.btn-ghost{background:#eceae6;color:#5a5a56}
+
+/* HERO */
+.hero{padding:80px 0 60px;text-align:center}
+.hero h1{font-size:48px;font-weight:800;letter-spacing:-1.5px;line-height:1.1;margin-bottom:16px;max-width:700px;margin-left:auto;margin-right:auto}
+.hero h1 span{color:#1D9E75}
+.hero p{font-size:18px;color:#5a5a56;max-width:540px;margin:0 auto 32px;line-height:1.6}
+.hero-buttons{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+.hero-buttons .btn{padding:12px 28px;font-size:16px}
+.hero-badge{display:inline-block;background:#E1F5EE;color:#0F6E56;font-size:13px;font-weight:600;padding:5px 14px;border-radius:99px;margin-bottom:20px}
+
+/* FEATURES */
+.features{padding:60px 0 80px}
+.features h2{text-align:center;font-size:32px;font-weight:800;letter-spacing:-0.5px;margin-bottom:8px}
+.features .sub{text-align:center;font-size:16px;color:#5a5a56;margin-bottom:40px}
+.features-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.feature-card{background:#fff;border:0.5px solid rgba(0,0,0,0.09);border-radius:14px;padding:24px;box-shadow:0 1px 3px rgba(0,0,0,0.05)}
+.feature-icon{font-size:28px;margin-bottom:12px}
+.feature-card h3{font-size:16px;font-weight:700;margin-bottom:6px}
+.feature-card p{font-size:14px;color:#5a5a56;line-height:1.6}
+
+/* HOW IT WORKS */
+.how{padding:60px 0;background:#fff;border-top:0.5px solid rgba(0,0,0,0.09);border-bottom:0.5px solid rgba(0,0,0,0.09)}
+.how h2{text-align:center;font-size:32px;font-weight:800;letter-spacing:-0.5px;margin-bottom:40px}
+.how-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:20px;max-width:900px;margin:0 auto}
+.how-step{text-align:center}
+.how-num{width:40px;height:40px;border-radius:50%;background:#E1F5EE;color:#0F6E56;font-weight:800;font-size:18px;display:flex;align-items:center;justify-content:center;margin:0 auto 12px}
+.how-step h4{font-size:15px;font-weight:700;margin-bottom:4px}
+.how-step p{font-size:13px;color:#5a5a56;line-height:1.5}
+
+/* PRICING */
+.pricing{padding:80px 0}
+.pricing h2{text-align:center;font-size:32px;font-weight:800;letter-spacing:-0.5px;margin-bottom:8px}
+.pricing .sub{text-align:center;font-size:16px;color:#5a5a56;margin-bottom:40px}
+.pricing-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;max-width:960px;margin:0 auto}
+.price-card{background:#fff;border:0.5px solid rgba(0,0,0,0.09);border-radius:14px;padding:28px 22px;box-shadow:0 1px 3px rgba(0,0,0,0.05);text-align:center;position:relative}
+.price-card.popular{border:2px solid #1D9E75;box-shadow:0 4px 20px rgba(29,158,117,0.15)}
+.popular-badge{position:absolute;top:-12px;left:50%;transform:translateX(-50%);background:#1D9E75;color:#fff;font-size:11px;font-weight:700;padding:3px 12px;border-radius:99px;white-space:nowrap}
+.price-card h3{font-size:18px;font-weight:700;margin-bottom:4px}
+.price-amount{font-size:36px;font-weight:800;letter-spacing:-1px;margin:12px 0 4px}
+.price-amount span{font-size:16px;font-weight:500;color:#5a5a56}
+.price-desc{font-size:13px;color:#5a5a56;margin-bottom:16px}
+.price-card ul{list-style:none;text-align:left;margin-bottom:20px}
+.price-card li{font-size:13px;padding:5px 0;color:#1a1a18;display:flex;align-items:center;gap:8px}
+.price-card li::before{content:"✓";color:#1D9E75;font-weight:700;font-size:14px}
+.price-card .btn{width:100%;justify-content:center}
+
+/* TESTIMONIAL */
+.social-proof{padding:60px 0;background:#fff;border-top:0.5px solid rgba(0,0,0,0.09)}
+.social-proof h2{text-align:center;font-size:28px;font-weight:800;margin-bottom:32px}
+.proof-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;max-width:900px;margin:0 auto}
+.proof-card{background:#f4f4f1;border-radius:12px;padding:20px}
+.proof-card p{font-size:14px;color:#5a5a56;line-height:1.6;font-style:italic;margin-bottom:12px}
+.proof-name{font-size:13px;font-weight:600;color:#1a1a18}
+.proof-co{font-size:12px;color:#9a9a94}
+
+/* CTA */
+.cta{padding:80px 0;text-align:center}
+.cta h2{font-size:36px;font-weight:800;letter-spacing:-1px;margin-bottom:12px}
+.cta p{font-size:17px;color:#5a5a56;margin-bottom:28px;max-width:500px;margin-left:auto;margin-right:auto}
+.cta .btn{padding:14px 36px;font-size:17px}
+
+/* FOOTER */
+footer{background:#0F1923;color:rgba(255,255,255,0.6);padding:36px 0;text-align:center;font-size:13px}
+footer .logo{color:#fff;margin-bottom:8px}
+
+/* RESPONSIVE */
+@media(max-width:768px){
+  .hero h1{font-size:32px}
+  .features-grid,.pricing-grid{grid-template-columns:1fr}
+  .how-grid{grid-template-columns:repeat(2,1fr)}
+  .proof-grid{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="inner">
+    <div class="logo">pallet<span>bill</span></div>
+    <div class="links">
+      <a href="#features">Features</a>
+      <a href="#pricing">Pricing</a>
+      <a href="#how">How it works</a>
+      <a href="https://pallettbill.netlify.app" class="btn btn-primary">Sign up free</a>
+    </div>
+  </div>
+</nav>
+
+<section class="hero">
+  <div class="container">
+    <div class="hero-badge">🚀 Built for 3PL warehouses</div>
+    <h1>Stop chasing payments.<br><span>Start getting paid.</span></h1>
+    <p>PalletBill is the all-in-one invoicing and CRM platform built specifically for third-party logistics companies. Create professional invoices, track your pipeline, and get paid faster.</p>
+    <div class="hero-buttons">
+      <a href="https://pallettbill.netlify.app" class="btn btn-primary">Start free 60-day trial →</a>
+      <a href="#pricing" class="btn btn-ghost">See pricing</a>
+    </div>
+  </div>
+</section>
+
+<section class="features" id="features">
+  <div class="container">
+    <h2>Everything your 3PL needs</h2>
+    <p class="sub">One platform to invoice clients, manage your pipeline, and collect payments.</p>
+    <div class="features-grid">
+      <div class="feature-card">
+        <div class="feature-icon">📄</div>
+        <h3>Professional Invoices</h3>
+        <p>Create branded invoices with line items for pallet storage, handling, accessorials, and more. Auto-calculate from your rate card.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">👥</div>
+        <h3>Built-in CRM</h3>
+        <p>Track leads, contacts, and customers through your pipeline. Log calls, emails, and meetings. Never lose a follow-up.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">💳</div>
+        <h3>Online Payments</h3>
+        <p>Accept credit cards and ACH bank transfers directly on your invoices. Clients pay in one click — funds deposit in 1-2 days.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">📊</div>
+        <h3>Rate Card Engine</h3>
+        <p>Define your rates for storage, handling, hazmat, kitting, and more. Pull rates directly into invoices — no manual math.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🌐</div>
+        <h3>Client Portal</h3>
+        <p>Give clients a secure, branded portal to view invoices, download receipts, and pay online. Professional and seamless.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">📈</div>
+        <h3>Pipeline & Analytics</h3>
+        <p>See your revenue at a glance. Track outstanding invoices, pipeline value, and customer health — all from one dashboard.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="how" id="how">
+  <div class="container">
+    <h2>Up and running in minutes</h2>
+    <div class="how-grid">
+      <div class="how-step">
+        <div class="how-num">1</div>
+        <h4>Sign up</h4>
+        <p>Create your free account in 30 seconds. No credit card required.</p>
+      </div>
+      <div class="how-step">
+        <div class="how-num">2</div>
+        <h4>Set your rates</h4>
+        <p>Enter your pallet storage, handling, and accessorial rates once.</p>
+      </div>
+      <div class="how-step">
+        <div class="how-num">3</div>
+        <h4>Send invoices</h4>
+        <p>Create and send professional invoices in under 60 seconds.</p>
+      </div>
+      <div class="how-step">
+        <div class="how-num">4</div>
+        <h4>Get paid</h4>
+        <p>Clients pay online via card or ACH. Money hits your bank in 1-2 days.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="pricing" id="pricing">
+  <div class="container">
+    <h2>Simple, transparent pricing</h2>
+    <p class="sub">Start free. Upgrade when you're ready. Cancel anytime.</p>
+    <div class="pricing-grid">
+      <div class="price-card">
+        <h3>Free Trial</h3>
+        <div class="price-amount">$0</div>
+        <div class="price-desc">60 days free — full access</div>
+        <ul>
+          <li>Unlimited invoices</li>
+          <li>CRM + pipeline</li>
+          <li>Rate card engine</li>
+          <li>Email support</li>
+        </ul>
+        <a href="https://pallettbill.netlify.app" class="btn btn-primary">Start free trial</a>
+      </div>
+      <div class="price-card">
+        <h3>Starter</h3>
+        <div class="price-amount">$49<span>/mo</span></div>
+        <div class="price-desc">For solo operators</div>
+        <ul>
+          <li>Unlimited invoices</li>
+          <li>CRM + pipeline</li>
+          <li>Rate card engine</li>
+          <li>Email support</li>
+        </ul>
+        <a href="https://pallettbill.netlify.app" class="btn btn-primary">Get started</a>
+      </div>
+      <div class="price-card popular">
+        <div class="popular-badge">Most popular</div>
+        <h3>Growth</h3>
+        <div class="price-amount">$99<span>/mo</span></div>
+        <div class="price-desc">For growing warehouses</div>
+        <ul>
+          <li>Everything in Starter</li>
+          <li>Payment links (card + ACH)</li>
+          <li>Client portal</li>
+          <li>Priority support</li>
+        </ul>
+        <a href="https://pallettbill.netlify.app" class="btn btn-primary">Get started</a>
+      </div>
+      <div class="price-card">
+        <h3>Pro</h3>
+        <div class="price-amount">$199<span>/mo</span></div>
+        <div class="price-desc">For teams & multi-site</div>
+        <ul>
+          <li>Everything in Growth</li>
+          <li>Multi-user access</li>
+          <li>API access</li>
+          <li>Custom branding</li>
+        </ul>
+        <a href="https://pallettbill.netlify.app" class="btn btn-primary">Get started</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="social-proof">
+  <div class="container">
+    <h2>Trusted by 3PLs across Texas</h2>
+    <div class="proof-grid">
+      <div class="proof-card">
+        <p>"We went from chasing payments for weeks to getting paid in 48 hours. PalletBill changed everything for us."</p>
+        <div class="proof-name">Barrett S.</div>
+        <div class="proof-co">Simpl Fulfillment, Austin TX</div>
+      </div>
+      <div class="proof-card">
+        <p>"The rate card feature alone saves me 2 hours a week. I just click and send — no more spreadsheets."</p>
+        <div class="proof-name">Jeff K.</div>
+        <div class="proof-co">Crossroads 3PL, Temple TX</div>
+      </div>
+      <div class="proof-card">
+        <p>"Finally a billing tool that actually understands 3PL. Pallet rates, handling fees, hazmat — it's all built in."</p>
+        <div class="proof-name">Jennifer M.</div>
+        <div class="proof-co">Fluffle Fulfillment, Buda TX</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="cta">
+  <div class="container">
+    <h2>Ready to get paid faster?</h2>
+    <p>Join warehouse operators across Texas who use PalletBill to invoice smarter and collect faster.</p>
+    <a href="https://pallettbill.netlify.app" class="btn btn-primary">Start your free 60-day trial →</a>
+  </div>
+</section>
+
+<footer>
+  <div class="container">
+    <div class="logo">pallet<span style="color:#1D9E75">bill</span></div>
+    <p style="margin-top:8px">© 2026 PalletBill. Built in Temple, Texas.</p>
+  </div>
+</footer>
+
+</body>
+</html>
