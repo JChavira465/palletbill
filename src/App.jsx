@@ -191,7 +191,7 @@ const PLANS = [
 function AuthGate() {
   const [session, setSession] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [authMode, setAuthMode] = useState("login"); // login | signup | forgot
+  const [authMode, setAuthMode] = useState(() => new URLSearchParams(window.location.search).get("mode") === "signup" ? "signup" : "login"); // login | signup | forgot
   const [authEmail, setAuthEmail] = useState("");
   const [authPass, setAuthPass] = useState("");
   const [authError, setAuthError] = useState("");
