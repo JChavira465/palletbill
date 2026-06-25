@@ -1,4 +1,10 @@
 import { useState, useEffect } from "react";
+import { createClient } from "@supabase/supabase-js";
+
+const supabase = createClient(
+  import.meta.env.VITE_SUPABASE_URL,
+  import.meta.env.VITE_SUPABASE_ANON_KEY
+);
 
 // ─── CONFIG ──────────────────────────────────────────────────────────────────
 const ADMIN_EMAIL = "jose.i.chavira.jr@gmail.com";
@@ -94,14 +100,23 @@ const LoginPage = ({onLogin}) => {
   const [email,setEmail] = useState("");
   const [pass,setPass]   = useState("");
   const [err,setErr]     = useState("");
+  const [loading,setLoading] = useState(false);
 
-  const submit = () => {
-    if(email.toLowerCase()!==ADMIN_EMAIL.toLowerCase()){setErr("Access denied — admin only");return;}
+  const submit = async () => {
+    setErr("");
     if(!pass){setErr("Password required");return;}
-    // In production: Supabase signInWithPassword
-    // const { error } = await supabase.auth.signInWithPassword({ email, password: pass })
-    if(pass==="admin123!"){onLogin();}
-    else setErr("Incorrect password");
+    setLoading(true);
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password: pass });
+    if(error){setErr(error.message);setLoading(false);return;}
+    const { data: profile } = await supabase.from("profiles").select("is_admin").eq("id", data.user.id).single();
+    if(!profile?.is_admin){
+      await supabase.auth.signOut();
+      setErr("Access denied — admin only");
+      setLoading(false);
+      return;
+    }
+    setLoading(false);
+    onLogin(data.session);
   };
 
   return (
@@ -120,8 +135,8 @@ const LoginPage = ({onLogin}) => {
           <input style={inp} type="password" value={pass} onChange={e=>setPass(e.target.value)} onKeyDown={e=>e.key==="Enter"&&submit()} placeholder="••••••••" />
         </div>
         {err && <div style={{background:C.redL,color:C.red,padding:"8px 12px",borderRadius:8,fontSize:13,marginBottom:14}}>{err}</div>}
-        <Btn variant="primary" onClick={submit} style={{width:"100%",justifyContent:"center",padding:"10px 0",fontSize:14}}>Sign in to admin</Btn>
-        <div style={{fontSize:11,color:C.text3,textAlign:"center",marginTop:14}}>Only jose.i.chavira.jr@gmail.com can access this panel</div>
+        <Btn variant="primary" onClick={submit} style={{width:"100%",justifyContent:"center",padding:"10px 0",fontSize:14,opacity:loading?0.6:1}}>{loading?"Signing in...":"Sign in to admin"}</Btn>
+        <div style={{fontSize:11,color:C.text3,textAlign:"center",marginTop:14}}>Admin access only — requires is_admin flag in Supabase</div>
       </div>
     </div>
   );
@@ -130,6 +145,7 @@ const LoginPage = ({onLogin}) => {
 // ─── MAIN ADMIN APP ──────────────────────────────────────────────────────────
 export default function AdminApp() {
   const [loggedIn,setLoggedIn]     = useState(false);
+  const [authLoading,setAuthLoading] = useState(true);
   const [view,setView]             = useState("dashboard");
   const [selectedUser,setSelectedUser] = useState(null);
   const [users,setUsers]           = useState(MOCK_USERS);
@@ -139,6 +155,20 @@ export default function AdminApp() {
   const [healthFilter,setHealthFilter] = useState("");
   const [toast,setToast]           = useState({msg:"",visible:false});
   const [extendId,setExtendId]     = useState(null);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (session) {
+        const { data: profile } = await supabase.from("profiles").select("is_admin").eq("id", session.user.id).single();
+        if (profile?.is_admin) setLoggedIn(true);
+      }
+      setAuthLoading(false);
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => {
+      if (!session) setLoggedIn(false);
+    });
+    return () => subscription.unsubscribe();
+  }, []);
 
   const showToast = msg => { setToast({msg,visible:true}); setTimeout(()=>setToast(t=>({...t,visible:false})),3000); };
 
@@ -175,6 +205,7 @@ export default function AdminApp() {
   const totalInvoices = MOCK_INVOICES.length;
   const overdueInvs   = MOCK_INVOICES.filter(i=>i.status==="overdue");
 
+  if(authLoading) return <div style={{minHeight:"100vh",background:C.sidebar,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontFamily:"-apple-system,sans-serif"}}>Loading...</div>;
   if(!loggedIn) return <LoginPage onLogin={()=>setLoggedIn(true)} />;
 
   const navItems = [
@@ -584,7 +615,7 @@ export default function AdminApp() {
         <div style={{padding:"14px 16px",borderTop:"0.5px solid rgba(255,255,255,0.08)"}}>
           <div style={{fontSize:11,color:"rgba(255,255,255,0.4)",marginBottom:4}}>Logged in as</div>
           <div style={{fontSize:12,color:"rgba(255,255,255,0.7)",fontWeight:500,marginBottom:10}}>jose.i.chavira.jr</div>
-          <button onClick={()=>setLoggedIn(false)} style={{...btn("ghost",true),width:"100%",justifyContent:"center",color:"rgba(255,255,255,0.5)",background:"rgba(255,255,255,0.06)",border:"0.5px solid rgba(255,255,255,0.1)"}}>Sign out</button>
+          <button onClick={()=>{supabase.auth.signOut();setLoggedIn(false);}} style={{...btn("ghost",true),width:"100%",justifyContent:"center",color:"rgba(255,255,255,0.5)",background:"rgba(255,255,255,0.06)",border:"0.5px solid rgba(255,255,255,0.1)"}}>Sign out</button>
         </div>
       </aside>
 
