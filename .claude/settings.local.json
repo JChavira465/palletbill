@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(Set-Location \"$env:USERPROFILE\\\\Desktop\\\\pallettbill-final\"; Get-Location)",
+      "Bash(npm install *)",
+      "Bash(npm run *)",
+      "Bash(npx netlify *)",
+      "Bash(npm list *)",
+      "Bash(npm cache *)",
+      "Bash(curl -s -X POST \"https://api.netlify.com/api/v1/sites\" -H \"Authorization: Bearer nfp_Vqxij5V3YynYB3Fk63bnjwrPuZxFpUSR2048\" -H \"Content-Type: application/json\" -d '{\"name\":\"pallettbill\",\"custom_domain\":null}')",
+      "Bash(curl -s -X POST \"https://api.netlify.com/api/v1/sites\" -H \"Authorization: Bearer nfp_Vqxij5V3YynYB3Fk63bnjwrPuZxFpUSR2048\" -H \"Content-Type: application/json\" -d \"{\\\\\"name\\\\\":\\\\\"pallettbill\\\\\"}\")",
+      "Bash(gh auth *)",
+      "PowerShell(gh auth status 2>&1)",
+      "Bash(git init *)",
+      "Bash(git branch *)",
+      "Bash(git add *)"
+    ]
+  }
+}
