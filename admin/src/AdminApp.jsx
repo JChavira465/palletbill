@@ -119,11 +119,12 @@ const LoginPage = ({onLogin}) => {
     setLoading(true);
     const { data, error } = await supabase.auth.signInWithPassword({ email, password: pass });
     if(error){setErr(error.message);setLoading(false);return;}
-    const { data: profile, error: profileErr } = await supabase.from("profiles").select("is_admin").eq("id", data.user.id).single();
-    console.log("Profile lookup:", { profile, profileErr, userId: data.user.id });
-    if(profileErr || !profile?.is_admin){
+    const { data: profiles, error: profileErr } = await supabase.from("profiles").select("is_admin").eq("id", data.user.id);
+    console.log("Profile lookup:", { profiles, profileErr, userId: data.user.id });
+    const profile = profiles?.[0];
+    if(profileErr || !profile || !profile.is_admin){
       await supabase.auth.signOut();
-      setErr(profileErr ? `Profile error: ${profileErr.message}` : "Access denied — admin only");
+      setErr(profileErr ? `Profile error: ${profileErr.message}` : !profile ? "Profile not found — sign up on the main app first" : "Access denied — admin only");
       setLoading(false);
       return;
     }
@@ -270,8 +271,8 @@ export default function AdminApp() {
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (session) {
-        const { data: profile } = await supabase.from("profiles").select("is_admin").eq("id", session.user.id).single();
-        if (profile?.is_admin) setLoggedIn(true);
+        const { data: profiles } = await supabase.from("profiles").select("is_admin").eq("id", session.user.id);
+        if (profiles?.[0]?.is_admin) setLoggedIn(true);
       }
       setAuthLoading(false);
     });
