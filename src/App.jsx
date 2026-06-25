@@ -378,6 +378,21 @@ function PalletBill({ session }) {
   const [companyName, setCompanyName] = useState("Your Company LLC");
   const [companyAddress, setCompanyAddress] = useState("1234 Warehouse Blvd\nTemple, TX 76502");
 
+  // Plan & team
+  const [userPlan, setUserPlan] = useState("trial");
+  const [teamMembers, setTeamMembers] = useState([]);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState("Member");
+
+  // Onboarding
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [onboardingStep, setOnboardingStep] = useState(0);
+
+  // Recurring invoices
+  const [recurringInvoices, setRecurringInvoices] = useState([]);
+  const [recurringModal, setRecurringModal] = useState(false);
+  const [recurringForm, setRecurringForm] = useState({ clientId: "", client: "", email: "", frequency: "monthly", startDate: today(), lineItems: [{ desc: "Pallet storage", qty: "", rate: "" }], active: true });
+
   // ── LOAD DATA FROM SUPABASE ──
   useEffect(() => {
     async function loadData() {
@@ -424,9 +439,28 @@ function PalletBill({ session }) {
       if (profileRes.data) {
         setCompanyName(profileRes.data.company_name || "Your Company LLC");
         setCompanyAddress(profileRes.data.address || "1234 Warehouse Blvd\nTemple, TX 76502");
+        setUserPlan(profileRes.data.plan || "trial");
       }
 
+      // Load team members from localStorage
+      try {
+        const savedTeam = localStorage.getItem(`pallettbill_team_${userId}`);
+        if (savedTeam) setTeamMembers(JSON.parse(savedTeam));
+      } catch {}
+
       setDataLoaded(true);
+
+      // Check onboarding
+      const onboarded = localStorage.getItem(`pallettbill_onboarded_${userId}`);
+      if (!onboarded && (clientsRes.data || []).length === 0 && (invoicesRes.data || []).length === 0) {
+        setShowOnboarding(true);
+      }
+
+      // Load recurring invoices from localStorage
+      try {
+        const saved = localStorage.getItem(`pallettbill_recurring_${userId}`);
+        if (saved) setRecurringInvoices(JSON.parse(saved));
+      } catch {}
     }
     loadData();
   }, [userId]);
@@ -447,7 +481,7 @@ function PalletBill({ session }) {
 
   // ── NAV ITEMS ──
   const navGroups = [
-    { section: "Main", items: [{ id: "dashboard", label: "Dashboard", icon: "dashboard" }, { id: "invoices", label: "All invoices", icon: "invoice", badge: invoices.filter(i => i.status === "overdue").length || null, badgeColor: C.red }, { id: "newInvoice", label: "New invoice", icon: "plus" }] },
+    { section: "Main", items: [{ id: "dashboard", label: "Dashboard", icon: "dashboard" }, { id: "invoices", label: "All invoices", icon: "invoice", badge: invoices.filter(i => i.status === "overdue").length || null, badgeColor: C.red }, { id: "newInvoice", label: "New invoice", icon: "plus" }, { id: "recurring", label: "Recurring", icon: "alarm", badge: recurringInvoices.filter(r => r.active).length || null }] },
     { section: "CRM", items: [{ id: "contacts", label: "Contacts", icon: "contacts", badge: contacts.length }, { id: "pipeline", label: "Pipeline", icon: "pipeline" }, { id: "activity", label: "Activity feed", icon: "activity" }] },
     { section: "Get Paid", items: [{ id: "payments", label: "Payment connections", icon: "payment" }, { id: "portal", label: "Client portal", icon: "portal" }] },
     { section: "Setup", items: [{ id: "rates", label: "Rate card", icon: "rates" }, { id: "settings", label: "Settings", icon: "settings" }] },
@@ -603,6 +637,31 @@ function PalletBill({ session }) {
         setContacts(prev => prev.map(c => c.id === invForm.clientId ? { ...c, activities: [act, ...(c.activities || [])], invoices: [...(c.invoices || []), invNum] } : c));
       }
       showToast(paymentLinkUrl ? `Invoice sent with payment link` : `Invoice sent to ${invForm.email}`);
+
+      // Open mailto link for email notification
+      const emailLines = (lineItems || []).filter(li => li.desc || li.qty).map(li => {
+        const amt = (parseFloat(li.qty) || 0) * (parseFloat(li.rate) || 0);
+        return `  - ${li.desc}: ${li.qty} x $${(parseFloat(li.rate) || 0).toFixed(2)} = $${amt.toFixed(2)}`;
+      }).join("\n");
+      const emailBody = [
+        `Hi ${invForm.client},`,
+        "",
+        `Please find your invoice ${invNum} from ${companyName}.`,
+        "",
+        `Amount due: ${fmtMoney(total)}`,
+        invForm.dueDate ? `Due date: ${fmtDate(invForm.dueDate)}` : "",
+        "",
+        emailLines ? `Line items:\n${emailLines}` : "",
+        paymentLinkUrl ? `\nPay online securely:\n${paymentLinkUrl}\n` : "",
+        "If you have any questions about this invoice, please don't hesitate to reach out.",
+        "",
+        "Thank you for your business!",
+        "",
+        `Best regards,`,
+        companyName,
+      ].filter(Boolean).join("\n");
+      const emailSubject = `Invoice ${invNum} from ${companyName}`;
+      window.open(`mailto:${encodeURIComponent(invForm.email)}?subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(emailBody)}`, "_self");
     } else {
       showToast("Draft saved");
     }
@@ -1362,12 +1421,268 @@ function PalletBill({ session }) {
           await supabase.from("profiles").update({ company_name: companyName, address: companyAddress }).eq("id", userId);
           showToast("Settings saved");
         }}>Save changes</Btn>
+
+        {userPlan === "pro" && (
+          <div style={{ ...s.card(), marginTop: 20 }}>
+            <div style={s.cardHeader}>
+              <div style={s.cardTitle}><Icon name="contacts" size={15} /> Team Members</div>
+              <Btn sm variant="primary" onClick={() => setModal("inviteTeam")}><Icon name="plus" size={12} /> Invite member</Btn>
+            </div>
+            <div style={{ borderBottom: `0.5px solid ${C.border}`, padding: "10px 0", display: "flex", alignItems: "center", gap: 12 }}>
+              <Avatar name={session.user.email.split("@")[0]} size={32} />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 600 }}>{session.user.email}</div>
+                <div style={{ fontSize: 11, color: C.text3 }}>Owner</div>
+              </div>
+              <span style={s.badge("Customer")}>Owner</span>
+            </div>
+            {teamMembers.map((m, i) => (
+              <div key={i} style={{ borderBottom: i < teamMembers.length - 1 ? `0.5px solid ${C.border}` : "none", padding: "10px 0", display: "flex", alignItems: "center", gap: 12 }}>
+                <Avatar name={m.email.split("@")[0]} size={32} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>{m.email}</div>
+                  <div style={{ fontSize: 11, color: C.text3 }}>{m.role} — Invited</div>
+                </div>
+                <span style={s.badge(m.role === "Admin" ? "Trial" : "Lead")}>{m.role}</span>
+                <button onClick={() => { const updated = teamMembers.filter((_, j) => j !== i); setTeamMembers(updated); localStorage.setItem(`pallettbill_team_${userId}`, JSON.stringify(updated)); showToast("Member removed"); }} style={{ ...s.btn("ghost", true), padding: "4px 8px" }}><Icon name="trash" size={12} color={C.red} /></button>
+              </div>
+            ))}
+            {teamMembers.length === 0 && (
+              <div style={{ padding: "16px 0", textAlign: "center", color: C.text3, fontSize: 13 }}>No team members yet. Invite your first teammate above.</div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
 
+  // ── ONBOARDING ──
+  const finishOnboarding = () => {
+    localStorage.setItem(`pallettbill_onboarded_${userId}`, "true");
+    setShowOnboarding(false);
+  };
+
+  const renderOnboarding = () => {
+    const steps = ["Welcome", "Set Rates", "First Invoice"];
+    return (
+      <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", background: C.bg, padding: 24 }}>
+        <div style={{ background: C.card, borderRadius: 18, padding: 36, maxWidth: 520, width: "100%", boxShadow: "0 8px 32px rgba(0,0,0,0.1)", border: `0.5px solid ${C.border}` }}>
+          {/* Progress */}
+          <div style={{ display: "flex", gap: 8, marginBottom: 28 }}>
+            {steps.map((label, i) => (
+              <div key={i} style={{ flex: 1, textAlign: "center" }}>
+                <div style={{ height: 4, borderRadius: 2, background: i <= onboardingStep ? C.green : C.bg2, marginBottom: 6, transition: "background 0.2s" }} />
+                <div style={{ fontSize: 11, fontWeight: i === onboardingStep ? 700 : 400, color: i <= onboardingStep ? C.greenD : C.text3 }}>{label}</div>
+              </div>
+            ))}
+          </div>
+
+          {onboardingStep === 0 && (
+            <>
+              <div style={{ fontSize: 22, fontWeight: 700, marginBottom: 6 }}>Welcome to <span style={{ color: C.green }}>PalletBill</span>!</div>
+              <div style={{ fontSize: 14, color: C.text2, marginBottom: 20, lineHeight: 1.6 }}>Let's get your account set up in under 2 minutes. Start by confirming your company info.</div>
+              <div style={s.field(12)}><label style={s.label}>Company name</label><input style={s.input} value={companyName} onChange={e => setCompanyName(e.target.value)} /></div>
+              <div style={s.field(16)}><label style={s.label}>Address</label><textarea style={s.textarea} value={companyAddress} onChange={e => setCompanyAddress(e.target.value)} rows={2} /></div>
+              <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                <Btn onClick={finishOnboarding}>Skip setup</Btn>
+                <Btn variant="primary" onClick={async () => {
+                  await supabase.from("profiles").update({ company_name: companyName, address: companyAddress }).eq("id", userId);
+                  showToast("Company info saved");
+                  setOnboardingStep(1);
+                }}>Continue <Icon name="arrow" size={13} /></Btn>
+              </div>
+            </>
+          )}
+
+          {onboardingStep === 1 && (
+            <>
+              <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 6 }}>Set your rates</div>
+              <div style={{ fontSize: 13, color: C.text2, marginBottom: 20 }}>Configure your core rates. You can always adjust these later.</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
+                {[["Pallet storage / mo", "pallet"], ["Inbound / unit", "inUnit"], ["Outbound / unit", "outUnit"], ["Monthly minimum", "min"]].map(([label, key]) => (
+                  <div key={key}>
+                    <label style={s.label}>{label}</label>
+                    <div style={{ display: "flex", alignItems: "center" }}>
+                      <span style={{ background: C.bg2, border: `0.5px solid ${C.border2}`, borderRight: "none", borderRadius: "8px 0 0 8px", padding: "8px 10px", fontSize: 13, color: C.text3 }}>$</span>
+                      <input type="number" value={rateCard[key]} onChange={e => setRateCard(r => ({ ...r, [key]: parseFloat(e.target.value) || 0 }))} style={{ ...s.input, borderRadius: "0 8px 8px 0" }} step="0.01" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: "flex", gap: 8, justifyContent: "space-between" }}>
+                <Btn onClick={() => setOnboardingStep(0)}>← Back</Btn>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <Btn onClick={finishOnboarding}>Skip</Btn>
+                  <Btn variant="primary" onClick={async () => {
+                    await supabase.from("rate_cards").upsert({
+                      user_id: userId, pallet_storage: rateCard.pallet, bin_storage: rateCard.bin,
+                      floor_storage: rateCard.floor, monthly_min: rateCard.min, inbound_unit: rateCard.inUnit,
+                      outbound_unit: rateCard.outUnit, inbound_pallet: rateCard.inPallet, outbound_pallet: rateCard.outPallet,
+                      hazmat: rateCard.hazmat, repackaging: rateCard.repack, refused: rateCard.refused,
+                      after_hours: rateCard.afterhours, returns: rateCard.returns, kitting: rateCard.kitting,
+                    }, { onConflict: "user_id" });
+                    showToast("Rates saved");
+                    setOnboardingStep(2);
+                  }}>Continue <Icon name="arrow" size={13} /></Btn>
+                </div>
+              </div>
+            </>
+          )}
+
+          {onboardingStep === 2 && (
+            <>
+              <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 6 }}>Create your first invoice</div>
+              <div style={{ fontSize: 13, color: C.text2, marginBottom: 24, lineHeight: 1.6 }}>You're all set! Create your first invoice or explore the dashboard.</div>
+              <div style={{ display: "flex", gap: 10, justifyContent: "center", marginBottom: 16 }}>
+                <Btn variant="primary" onClick={() => { finishOnboarding(); go("newInvoice"); }}><Icon name="plus" size={13} />Create first invoice</Btn>
+                <Btn onClick={() => { finishOnboarding(); go("dashboard"); }}>Go to dashboard</Btn>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  // ── RECURRING INVOICES ──
+  const saveRecurringInvoices = (updated) => {
+    setRecurringInvoices(updated);
+    localStorage.setItem(`pallettbill_recurring_${userId}`, JSON.stringify(updated));
+  };
+
+  const saveRecurring = () => {
+    if (!recurringForm.client) { showToast("Select a client", "error"); return; }
+    const newR = {
+      id: Date.now().toString(),
+      clientId: recurringForm.clientId,
+      client: recurringForm.client,
+      email: recurringForm.email,
+      frequency: recurringForm.frequency,
+      startDate: recurringForm.startDate,
+      lineItems: recurringForm.lineItems.filter(li => li.desc),
+      active: true,
+      nextRun: recurringForm.startDate,
+      created: today(),
+    };
+    saveRecurringInvoices([newR, ...recurringInvoices]);
+    setRecurringModal(false);
+    setRecurringForm({ clientId: "", client: "", email: "", frequency: "monthly", startDate: today(), lineItems: [{ desc: "Pallet storage", qty: "", rate: "" }], active: true });
+    showToast("Recurring invoice created");
+  };
+
+  const generateFromRecurring = (r) => {
+    setInvForm(f => ({ ...f, clientId: r.clientId, client: r.client, email: r.email, invNum: nextInvNum(invoices), invDate: today(), dueDate: (() => { const d = new Date(); d.setDate(d.getDate() + 15); return d.toISOString().split("T")[0]; })() }));
+    setLineItems(r.lineItems.map(li => ({ ...li })));
+    go("newInvoice");
+    showToast("Invoice pre-filled from recurring template");
+  };
+
+  const renderRecurring = () => {
+    const updateRecLI = (i, field, val) => {
+      const updated = [...recurringForm.lineItems];
+      updated[i] = { ...updated[i], [field]: val };
+      setRecurringForm(f => ({ ...f, lineItems: updated }));
+    };
+    return (
+      <div style={{ flex: 1, overflowY: "auto" }}>
+        <div style={{ padding: 24 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+            <div style={{ fontSize: 14, fontWeight: 600 }}>Recurring invoices — {recurringInvoices.filter(r => r.active).length} active</div>
+            <Btn variant="primary" onClick={() => setRecurringModal(true)}><Icon name="plus" size={13} />Add recurring</Btn>
+          </div>
+
+          {recurringInvoices.length === 0 ? (
+            <div style={{ ...s.card(0), padding: "48px 20px", textAlign: "center" }}>
+              <div style={{ fontSize: 32, marginBottom: 8 }}><Icon name="alarm" size={32} color={C.text3} /></div>
+              <div style={{ fontWeight: 600, color: C.text2, marginBottom: 4 }}>No recurring invoices</div>
+              <div style={{ fontSize: 13, color: C.text3, marginBottom: 16 }}>Set up recurring invoices to auto-generate templates each month.</div>
+              <Btn variant="primary" onClick={() => setRecurringModal(true)}><Icon name="plus" size={13} />Add your first</Btn>
+            </div>
+          ) : (
+            <div style={s.dataTable}>
+              <div style={{ ...s.tableHead, gridTemplateColumns: "1.5fr 1fr 90px 100px 100px 120px" }}>
+                <span>Client</span><span>Frequency</span><span>Items</span><span>Next run</span><span>Status</span><span style={{ textAlign: "right" }}>Actions</span>
+              </div>
+              {recurringInvoices.map((r, i) => {
+                const total = (r.lineItems || []).reduce((sum, li) => sum + (parseFloat(li.qty) || 0) * (parseFloat(li.rate) || 0), 0);
+                return (
+                  <div key={r.id} style={{ ...s.tableRow, gridTemplateColumns: "1.5fr 1fr 90px 100px 100px 120px", borderBottom: i < recurringInvoices.length - 1 ? `0.5px solid ${C.border}` : "none" }}>
+                    <div><div style={{ fontWeight: 600, fontSize: 13 }}>{r.client}</div><div style={{ fontSize: 12, color: C.text2 }}>{r.email}</div></div>
+                    <div style={{ fontSize: 13, textTransform: "capitalize" }}>{r.frequency}</div>
+                    <div style={{ fontSize: 13 }}>{(r.lineItems || []).length} items · {fmtMoney(total)}</div>
+                    <div style={{ fontSize: 12, color: C.text2 }}>{fmtDate(r.nextRun)}</div>
+                    <div>
+                      <span style={{ ...s.badge(r.active ? "paid" : "draft"), cursor: "pointer" }} onClick={() => {
+                        const updated = recurringInvoices.map(ri => ri.id === r.id ? { ...ri, active: !ri.active } : ri);
+                        saveRecurringInvoices(updated);
+                        showToast(r.active ? "Recurring paused" : "Recurring activated");
+                      }}>
+                        <span style={{ width: 5, height: 5, borderRadius: "50%", background: "currentColor", opacity: 0.7 }} />
+                        {r.active ? "Active" : "Paused"}
+                      </span>
+                    </div>
+                    <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                      <Btn sm variant="primary" onClick={() => generateFromRecurring(r)}>Generate</Btn>
+                      <button onClick={() => { saveRecurringInvoices(recurringInvoices.filter(ri => ri.id !== r.id)); showToast("Recurring deleted"); }} style={{ ...s.btn("ghost", true), padding: "4px 8px" }}><Icon name="trash" size={12} /></button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Add Recurring Modal */}
+        <Modal open={recurringModal} onClose={() => setRecurringModal(false)} title="Add recurring invoice" width={560}>
+          <div style={s.formGrid}>
+            <div style={{ ...s.field(), gridColumn: "1/-1" }}>
+              <label style={s.label}>Client *</label>
+              <select style={{ ...s.select, width: "100%" }} value={recurringForm.clientId} onChange={e => {
+                const c = contacts.find(c => c.id == e.target.value);
+                if (c) setRecurringForm(f => ({ ...f, clientId: c.id, client: c.company || c.name, email: c.email }));
+              }}>
+                <option value="">Select a client...</option>
+                {contacts.map(c => <option key={c.id} value={c.id}>{c.company || c.name}</option>)}
+              </select>
+            </div>
+            <div style={s.field()}>
+              <label style={s.label}>Frequency</label>
+              <select style={s.select} value={recurringForm.frequency} onChange={e => setRecurringForm(f => ({ ...f, frequency: e.target.value }))}>
+                <option value="monthly">Monthly</option>
+              </select>
+            </div>
+            <div style={s.field()}>
+              <label style={s.label}>Start date</label>
+              <input style={s.input} type="date" value={recurringForm.startDate} onChange={e => setRecurringForm(f => ({ ...f, startDate: e.target.value }))} />
+            </div>
+          </div>
+          <div style={{ marginBottom: 14 }}>
+            <label style={{ ...s.label, marginBottom: 8 }}>Line items</label>
+            <div style={{ display: "grid", gridTemplateColumns: "2fr 70px 90px 30px", gap: 6, marginBottom: 6, paddingBottom: 6, borderBottom: `0.5px solid ${C.border}` }}>
+              {["Description", "Qty", "Rate", ""].map(h => <span key={h} style={{ fontSize: 11, color: C.text3, textTransform: "uppercase", letterSpacing: 0.6 }}>{h}</span>)}
+            </div>
+            {recurringForm.lineItems.map((li, i) => (
+              <div key={i} style={{ display: "grid", gridTemplateColumns: "2fr 70px 90px 30px", gap: 6, marginBottom: 6, alignItems: "center" }}>
+                <input style={{ ...s.input, padding: "7px 10px", fontSize: 13 }} value={li.desc} onChange={e => updateRecLI(i, "desc", e.target.value)} placeholder="Service" />
+                <input style={{ ...s.input, padding: "7px 10px", fontSize: 13 }} type="number" value={li.qty} onChange={e => updateRecLI(i, "qty", e.target.value)} placeholder="0" />
+                <input style={{ ...s.input, padding: "7px 10px", fontSize: 13 }} type="number" value={li.rate} onChange={e => updateRecLI(i, "rate", e.target.value)} placeholder="0.00" step="0.01" />
+                <button onClick={() => setRecurringForm(f => ({ ...f, lineItems: f.lineItems.filter((_, j) => j !== i) }))} style={{ width: 26, height: 26, borderRadius: 6, border: "none", background: "transparent", color: C.text3, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><Icon name="trash" size={12} /></button>
+              </div>
+            ))}
+            <button onClick={() => setRecurringForm(f => ({ ...f, lineItems: [...f.lineItems, { desc: "", qty: "", rate: "" }] }))} style={{ display: "flex", alignItems: "center", gap: 6, color: C.green, fontSize: 13, fontWeight: 500, background: "none", border: "none", cursor: "pointer", padding: "6px 0", fontFamily: "inherit" }}><Icon name="plus" size={13} />Add line item</button>
+          </div>
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <Btn onClick={() => setRecurringModal(false)}>Cancel</Btn>
+            <Btn variant="primary" onClick={saveRecurring}>Save recurring</Btn>
+          </div>
+        </Modal>
+      </div>
+    );
+  };
+
   // ── VIEW ROUTER ──
   const renderView = () => {
+    if (view === "dashboard" && showOnboarding) return renderOnboarding();
     if (view === "dashboard") return renderDashboard();
     if (view === "invoices") return renderInvoices();
     if (view === "newInvoice") return renderNewInvoice();
@@ -1378,10 +1693,11 @@ function PalletBill({ session }) {
     if (view === "portal") return renderPortal();
     if (view === "rates") return renderRates();
     if (view === "settings") return renderSettings();
+    if (view === "recurring") return renderRecurring();
     return null;
   };
 
-  const VIEW_TITLES = { dashboard: "Dashboard", invoices: "All invoices", newInvoice: "New invoice", contacts: selectedContact ? selectedContact.name : "Contacts", pipeline: "Pipeline", activity: "Activity feed", payments: "Payment connections", portal: "Client portal", rates: "Rate card", settings: "Settings" };
+  const VIEW_TITLES = { dashboard: "Dashboard", invoices: "All invoices", newInvoice: "New invoice", contacts: selectedContact ? selectedContact.name : "Contacts", pipeline: "Pipeline", activity: "Activity feed", payments: "Payment connections", portal: "Client portal", rates: "Rate card", settings: "Settings", recurring: "Recurring invoices" };
 
   return (
     <div style={{ ...s.app, gridTemplateColumns: isMobile ? "1fr" : "220px 1fr" }}>
@@ -1408,7 +1724,10 @@ function PalletBill({ session }) {
           ))}
         </nav>
         <div style={s.sideFooter}>
-          <div style={{ fontSize: 12, color: C.text2, marginBottom: 6, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{session.user.email}</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+            <div style={{ fontSize: 12, color: C.text2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{session.user.email}</div>
+            <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 99, background: userPlan === "pro" ? C.purpleL : userPlan === "growth" ? C.greenL : userPlan === "starter" ? C.blueL : C.amberL, color: userPlan === "pro" ? C.purple : userPlan === "growth" ? C.greenD : userPlan === "starter" ? C.blue : C.amber, textTransform: "uppercase", letterSpacing: 0.5, whiteSpace: "nowrap" }}>{(PLANS.find(p => p.id === userPlan) || PLANS[0]).name}</span>
+          </div>
           <button onClick={() => supabase.auth.signOut()} style={{ width: "100%", background: C.bg2, color: C.text2, border: `0.5px solid ${C.border2}`, padding: "6px 10px", borderRadius: 8, fontSize: 12, fontWeight: 500, cursor: "pointer", fontFamily: "inherit" }}>Sign out</button>
         </div>
       </aside>
@@ -1470,6 +1789,42 @@ function PalletBill({ session }) {
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 16 }}>
           <Btn onClick={() => setModal(null)}>Cancel</Btn>
           <Btn variant="primary" onClick={() => addActivity(selectedContact?.id)}>Log activity</Btn>
+        </div>
+      </Modal>
+
+      <Modal open={modal === "inviteTeam"} onClose={() => { setModal(null); setInviteEmail(""); setInviteRole("Member"); }} title="Invite team member" width={420}>
+        <div style={s.field(12)}>
+          <label style={s.label}>Email address *</label>
+          <input style={s.input} type="email" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} placeholder="teammate@company.com" />
+        </div>
+        <div style={s.field(12)}>
+          <label style={s.label}>Role</label>
+          <div style={{ display: "flex", gap: 8 }}>
+            {["Admin", "Member"].map(role => (
+              <button key={role} onClick={() => setInviteRole(role)} style={{ flex: 1, padding: "10px 12px", borderRadius: 10, border: `1.5px solid ${inviteRole === role ? C.green : C.border2}`, background: inviteRole === role ? C.greenL : C.card, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: inviteRole === role ? C.greenD : C.text }}>{role}</div>
+                <div style={{ fontSize: 11, color: C.text3, marginTop: 2 }}>{role === "Admin" ? "Full access to all features" : "Create invoices & contacts only"}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 16 }}>
+          <Btn onClick={() => { setModal(null); setInviteEmail(""); setInviteRole("Member"); }}>Cancel</Btn>
+          <Btn variant="primary" onClick={() => {
+            if (!inviteEmail || !inviteEmail.includes("@")) { showToast("Enter a valid email", "error"); return; }
+            if (inviteEmail === session.user.email) { showToast("You can't invite yourself", "error"); return; }
+            if (teamMembers.some(m => m.email === inviteEmail)) { showToast("Already invited", "error"); return; }
+            const updated = [...teamMembers, { email: inviteEmail, role: inviteRole, invitedAt: today() }];
+            setTeamMembers(updated);
+            localStorage.setItem(`pallettbill_team_${userId}`, JSON.stringify(updated));
+            const subject = encodeURIComponent("You're invited to PalletBill");
+            const body = encodeURIComponent(`Hi,\n\nYou've been invited to join ${companyName} on PalletBill as ${inviteRole === "Admin" ? "an Admin" : "a Member"}.\n\nSign up here: ${window.location.origin}?mode=signup\n\nPalletBill — billing for 3PLs, simplified.`);
+            window.open(`mailto:${encodeURIComponent(inviteEmail)}?subject=${subject}&body=${body}`, "_self");
+            showToast("Invite sent");
+            setModal(null);
+            setInviteEmail("");
+            setInviteRole("Member");
+          }}><Icon name="send" size={12} /> Send invite</Btn>
         </div>
       </Modal>
 

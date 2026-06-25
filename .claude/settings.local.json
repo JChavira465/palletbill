@@ -13,7 +13,14 @@
       "PowerShell(gh auth status 2>&1)",
       "Bash(git init *)",
       "Bash(git branch *)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git config *)",
+      "Bash(git remote *)",
+      "Bash(git push *)",
+      "Bash(git commit *)",
+      "Bash(curl -s -H \"Authorization: Bearer nfp_Vqxij5V3YynYB3Fk63bnjwrPuZxFpUSR2048\" \"https://api.netlify.com/api/v1/sites/c6f90607-b118-47db-8fd0-a5827f4d47f0/deploys?per_page=1\")",
+      "Bash(curl -s -H \"Authorization: Bearer nfp_Vqxij5V3YynYB3Fk63bnjwrPuZxFpUSR2048\" \"https://api.netlify.com/api/v1/sites/52de8bdf-8425-438a-8233-e58893921e87/deploys?per_page=1\")"
     ]
   }
 }
