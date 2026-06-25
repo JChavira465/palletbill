@@ -45,6 +45,20 @@ const fmtDateShort = (d) => {
   try { return new Date(d).toISOString().split("T")[0]; } catch { return "never"; }
 };
 
+// ─── CSV EXPORT ─────────────────────────────────────────────────────────────
+const downloadCSV = (data, filename) => {
+  if (!data.length) return;
+  const keys = Object.keys(data[0]);
+  const csv = [keys.join(","), ...data.map(row => keys.map(k => {
+    const v = row[k] == null ? "" : String(row[k]);
+    return v.includes(",") || v.includes('"') || v.includes("\n") ? `"${v.replace(/"/g, '""')}"` : v;
+  }).join(","))].join("\n");
+  const blob = new Blob([csv], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a"); a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+};
+
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 const fmt = n => "$" + Math.abs(n||0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,",");
 const fmtDate = v => { if(!v||v==="never") return v||"—"; try{ return new Date(v+"T00:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}); }catch{ return v; }};
@@ -175,6 +189,8 @@ export default function AdminApp() {
   const [healthFilter,setHealthFilter] = useState("");
   const [toast,setToast]           = useState({msg:"",visible:false});
   const [extendId,setExtendId]     = useState(null);
+  const [isMobile,setIsMobile]     = useState(window.innerWidth < 768);
+  const [mobileMenu,setMobileMenu] = useState(false);
 
   // ─── Load real data from Supabase ──────────────────────────────────────────
   const loadData = async () => {
@@ -282,6 +298,13 @@ export default function AdminApp() {
     return () => subscription.unsubscribe();
   }, []);
 
+  // Mobile resize listener
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
   // Load data when logged in
   useEffect(() => {
     if (loggedIn) loadData();
@@ -350,12 +373,32 @@ export default function AdminApp() {
     {id:"support",    icon:"🛟", label:"Support notes"},
   ];
 
-  const renderDashboard = () => (
+  const renderDashboard = () => {
+    // Revenue chart data: last 6 months of paid invoices
+    const now = new Date();
+    const monthlyRevenue = [];
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+      const label = d.toLocaleDateString("en-US",{month:"short"});
+      const total = invoices.filter(inv => inv.status === "paid" && inv.date && inv.date.startsWith(key)).reduce((s,inv) => s + (inv.amount||0), 0);
+      monthlyRevenue.push({ label, total, key });
+    }
+    const maxRev = Math.max(...monthlyRevenue.map(m=>m.total), 1);
+
+    // Metric calculations
+    const nonDraftInvs = invoices.filter(i=>i.status!=="draft");
+    const paidInvs = invoices.filter(i=>i.status==="paid");
+    const collectionRate = nonDraftInvs.length > 0 ? Math.round(paidInvs.length / nonDraftInvs.length * 100) : 0;
+    const planPrices = { starter:49, growth:99, pro:199 };
+    const totalMRR = users.reduce((s,u) => s + (planPrices[u.plan]||0), 0);
+
+    return (
     <div style={{padding:24,flex:1,overflowY:"auto"}}>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:20}}>
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(4,1fr)",gap:12,marginBottom:20}}>
         {[
           {label:"Total customers",   value:users.length,         sub:`${paidCount} paid · ${trialCount} trial`},
-          {label:"Active (60-day %)", value:`${Math.round(activeCount/users.length*100)}%`, sub:`${activeCount} of ${users.length} active`},
+          {label:"Active (60-day %)", value:`${users.length?Math.round(activeCount/users.length*100):0}%`, sub:`${activeCount} of ${users.length} active`},
           {label:"Total billed",      value:fmt(totalRevenue),    sub:"Across all customers"},
           {label:"At risk",           value:atRiskCount,          sub:"Need follow-up today", color:atRiskCount>0?C.red:C.text},
         ].map(({label,value,sub,color}) => (
@@ -365,6 +408,56 @@ export default function AdminApp() {
             <div style={{fontSize:12,color:C.text3,marginTop:3}}>{sub}</div>
           </div>
         ))}
+      </div>
+
+      {/* Revenue Chart */}
+      <div style={{...card(16)}}>
+        <div style={{fontSize:13,fontWeight:600,marginBottom:14}}>Revenue — Last 6 months</div>
+        <svg viewBox="0 0 500 180" style={{width:"100%",height:"auto",display:"block"}}>
+          {/* Grid lines */}
+          {[0,1,2,3].map(i => {
+            const y = 20 + i * 40;
+            return <line key={i} x1="50" y1={y} x2="490" y2={y} stroke={C.border} strokeWidth="0.5" />;
+          })}
+          {/* Y-axis labels */}
+          {[0,1,2,3].map(i => {
+            const y = 20 + i * 40;
+            const val = maxRev - (i * maxRev / 3);
+            return <text key={i} x="45" y={y+4} textAnchor="end" fill={C.text3} fontSize="9">{val >= 1000 ? `$${(val/1000).toFixed(1)}k` : `$${Math.round(val)}`}</text>;
+          })}
+          {/* Bars */}
+          {monthlyRevenue.map((m, i) => {
+            const barW = 50;
+            const gap = (440 - barW * 6) / 5;
+            const x = 50 + i * (barW + gap);
+            const barH = maxRev > 0 ? (m.total / maxRev) * 120 : 0;
+            const y = 140 - barH;
+            return <g key={m.key}>
+              <rect x={x} y={y} width={barW} height={barH} rx="4" fill={C.green} opacity="0.85" />
+              {m.total > 0 && <text x={x + barW/2} y={y - 5} textAnchor="middle" fill={C.text2} fontSize="9" fontWeight="600">{fmt(m.total)}</text>}
+              <text x={x + barW/2} y={165} textAnchor="middle" fill={C.text3} fontSize="10">{m.label}</text>
+            </g>;
+          })}
+        </svg>
+      </div>
+
+      {/* Metric cards row */}
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(3,1fr)",gap:12,marginBottom:20}}>
+        <div style={{background:C.card,border:`0.5px solid ${C.border}`,borderRadius:14,padding:"16px 18px",boxShadow:"0 1px 3px rgba(0,0,0,0.05)"}}>
+          <div style={{fontSize:11,color:C.text3,textTransform:"uppercase",letterSpacing:0.6,marginBottom:6}}>Avg days to pay</div>
+          <div style={{fontSize:24,fontWeight:700,letterSpacing:-0.5}}>{"—"}</div>
+          <div style={{fontSize:12,color:C.text3,marginTop:3}}>Requires paid_at data</div>
+        </div>
+        <div style={{background:C.card,border:`0.5px solid ${C.border}`,borderRadius:14,padding:"16px 18px",boxShadow:"0 1px 3px rgba(0,0,0,0.05)"}}>
+          <div style={{fontSize:11,color:C.text3,textTransform:"uppercase",letterSpacing:0.6,marginBottom:6}}>Collection rate</div>
+          <div style={{fontSize:24,fontWeight:700,letterSpacing:-0.5,color:C.green}}>{collectionRate}%</div>
+          <div style={{fontSize:12,color:C.text3,marginTop:3}}>{paidInvs.length} of {nonDraftInvs.length} non-draft invoices</div>
+        </div>
+        <div style={{background:C.card,border:`0.5px solid ${C.border}`,borderRadius:14,padding:"16px 18px",boxShadow:"0 1px 3px rgba(0,0,0,0.05)"}}>
+          <div style={{fontSize:11,color:C.text3,textTransform:"uppercase",letterSpacing:0.6,marginBottom:6}}>Total MRR</div>
+          <div style={{fontSize:24,fontWeight:700,letterSpacing:-0.5,color:C.green}}>{fmt(totalMRR)}</div>
+          <div style={{fontSize:12,color:C.text3,marginTop:3}}>From paid plan subscribers</div>
+        </div>
       </div>
 
       {atRiskCount > 0 && (
@@ -378,7 +471,7 @@ export default function AdminApp() {
         </div>
       )}
 
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:16}}>
         <div>
           <div style={{fontWeight:600,fontSize:14,marginBottom:12}}>Recent customers</div>
           <div style={{background:C.card,border:`0.5px solid ${C.border}`,borderRadius:14,overflow:"hidden",boxShadow:"0 1px 3px rgba(0,0,0,0.05)"}}>
@@ -430,7 +523,7 @@ export default function AdminApp() {
         </div>
       </div>
     </div>
-  );
+  );};
 
   const renderCustomers = () => {
     if(selectedUser) return renderCustomerDetail(selectedUser);
@@ -444,10 +537,29 @@ export default function AdminApp() {
             <option value="yellow">Idle</option>
             <option value="red">At risk</option>
           </select>
-          <div style={{marginLeft:"auto",fontSize:13,color:C.text3,display:"flex",alignItems:"center"}}>{filteredUsers.length} customers</div>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <div style={{fontSize:13,color:C.text3}}>{filteredUsers.length} customers</div>
+            <Btn sm onClick={()=>downloadCSV(users.map(u=>({company:u.company,email:u.email,plan:u.plan,health:u.health,invoiceCount:u.invoiceCount,totalBilled:u.totalBilled,signupDate:u.signupDate,lastActive:u.lastActive})),"customers.csv")}>Export CSV</Btn>
+          </div>
         </div>
 
         <div style={{background:C.card,border:`0.5px solid ${C.border}`,borderRadius:14,overflow:"hidden",boxShadow:"0 1px 3px rgba(0,0,0,0.05)"}}>
+          {isMobile ? (<>
+            <div style={{display:"grid",gridTemplateColumns:"auto 1fr 70px 70px",gap:10,padding:"9px 14px",borderBottom:`0.5px solid ${C.border}`,background:C.bg2}}>
+              <span/>{["Company","Plan","Health"].map(h=>(
+                <span key={h} style={{fontSize:11,color:C.text3,textTransform:"uppercase",letterSpacing:0.6,fontWeight:500}}>{h}</span>
+              ))}
+            </div>
+            {filteredUsers.map((u,i)=>(
+              <div key={u.id} style={{display:"grid",gridTemplateColumns:"auto 1fr 70px 70px",gap:10,padding:"12px 14px",borderBottom:i<filteredUsers.length-1?`0.5px solid ${C.border}`:"none",alignItems:"center",cursor:"pointer"}}
+                onClick={()=>setSelectedUser(u)}>
+                <Avatar name={u.company} size={30} />
+                <div style={{fontWeight:600,fontSize:13,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{u.company}</div>
+                <Badge status={u.plan} />
+                <div style={{display:"flex",alignItems:"center",gap:4}}><HealthDot health={u.health} /><span style={{fontSize:11,color:healthColor(u.health)}}>{healthLabel(u.health)}</span></div>
+              </div>
+            ))}
+          </>) : (<>
           <div style={{display:"grid",gridTemplateColumns:"auto 1.8fr 1.2fr 80px 80px 90px 100px 80px",gap:12,padding:"9px 18px",borderBottom:`0.5px solid ${C.border}`,background:C.bg2}}>
             <span/>{["Company","Email","Plan","Health","Invoices","Billed","Last active"].map(h=>(
               <span key={h} style={{fontSize:11,color:C.text3,textTransform:"uppercase",letterSpacing:0.6,fontWeight:500}}>{h}</span>
@@ -471,6 +583,7 @@ export default function AdminApp() {
               <div style={{fontSize:12,color:C.text3}}>{u.lastActive==="never"?"Never":fmtDate(u.lastActive)}</div>
             </div>
           ))}
+          </>)}
         </div>
       </div>
     );
@@ -492,7 +605,7 @@ export default function AdminApp() {
           <Btn sm variant="danger" onClick={()=>{if(confirm("Deactivate this account?"))showToast("Account deactivated")}}>Deactivate</Btn>
         </div>
 
-        <div style={{display:"grid",gridTemplateColumns:"280px 1fr",gap:16,alignItems:"start"}}>
+        <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"280px 1fr",gap:16,alignItems:"start"}}>
           {/* LEFT: Profile */}
           <div>
             <div style={card()}>
@@ -618,7 +731,10 @@ export default function AdminApp() {
 
   const renderInvoices = () => (
     <div style={{padding:24,flex:1,overflowY:"auto"}}>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12,marginBottom:20}}>
+      <div style={{display:"flex",justifyContent:"flex-end",marginBottom:12}}>
+        <Btn sm onClick={()=>downloadCSV(invoices.map(inv=>({number:inv.number,client:inv.client,clientEmail:inv.clientEmail,amount:inv.amount,status:inv.status,date:inv.date})),"invoices.csv")}>Export CSV</Btn>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(3,1fr)",gap:12,marginBottom:20}}>
         {[
           {label:"Total invoices",  value:invoices.length},
           {label:"Total collected", value:fmt(invoices.filter(i=>i.status==="paid").reduce((s,i)=>s+i.amount,0))},
@@ -631,6 +747,21 @@ export default function AdminApp() {
         ))}
       </div>
       <div style={{background:C.card,border:`0.5px solid ${C.border}`,borderRadius:14,overflow:"hidden",boxShadow:"0 1px 3px rgba(0,0,0,0.05)"}}>
+        {isMobile ? (<>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 80px 80px",gap:10,padding:"9px 14px",borderBottom:`0.5px solid ${C.border}`,background:C.bg2}}>
+            {["Invoice","Amount","Status"].map(h=>(
+              <span key={h} style={{fontSize:11,color:C.text3,textTransform:"uppercase",letterSpacing:0.6,fontWeight:500}}>{h}</span>
+            ))}
+          </div>
+          {invoices.map((inv,i)=>(
+            <div key={inv.id} style={{display:"grid",gridTemplateColumns:"1fr 80px 80px",gap:10,padding:"12px 14px",borderBottom:i<invoices.length-1?`0.5px solid ${C.border}`:"none",alignItems:"center",cursor:"pointer"}}
+              onClick={()=>{const user=users.find(u=>u.id===inv.userId);setSelectedUser(user);setView("customers");}}>
+              <div><div style={{fontWeight:600,fontSize:13}}>{inv.number}</div><div style={{fontSize:11,color:C.text2}}>{inv.client}</div></div>
+              <span style={{fontWeight:600,fontSize:13}}>{fmt(inv.amount)}</span>
+              <Badge status={inv.status} />
+            </div>
+          ))}
+        </>) : (<>
         <div style={{display:"grid",gridTemplateColumns:"90px 1fr 1fr 90px 110px",gap:12,padding:"9px 18px",borderBottom:`0.5px solid ${C.border}`,background:C.bg2}}>
           {["Invoice","Customer","Company","Amount","Status"].map(h=>(
             <span key={h} style={{fontSize:11,color:C.text3,textTransform:"uppercase",letterSpacing:0.6,fontWeight:500}}>{h}</span>
@@ -649,6 +780,7 @@ export default function AdminApp() {
             </div>
           );
         })}
+        </>)}
       </div>
     </div>
   );
@@ -693,8 +825,23 @@ export default function AdminApp() {
 
   const renderSignups = () => (
     <div style={{padding:24,flex:1,overflowY:"auto"}}>
-      <div style={{fontWeight:600,fontSize:14,marginBottom:14}}>Signups — {signups.length} total</div>
+      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
+        <div style={{fontWeight:600,fontSize:14}}>Signups — {signups.length} total</div>
+        <Btn sm onClick={()=>downloadCSV(signups.map(s=>({email:s.email,company:s.company||"",status:s.status||"",source:s.source||"",created_at:s.created_at?s.created_at.split("T")[0]:""})),"signups.csv")}>Export CSV</Btn>
+      </div>
       <div style={{background:C.card,border:`0.5px solid ${C.border}`,borderRadius:14,overflow:"hidden",boxShadow:"0 1px 3px rgba(0,0,0,0.05)"}}>
+        {isMobile ? (<>
+          {signups.map((s,i)=>(
+            <div key={s.id} style={{padding:"12px 14px",borderBottom:i<signups.length-1?`0.5px solid ${C.border}`:"none"}}>
+              <div style={{fontWeight:600,fontSize:13}}>{s.company || "—"}</div>
+              <div style={{fontSize:12,color:C.text2}}>{s.email}</div>
+              <div style={{display:"flex",gap:8,alignItems:"center",marginTop:6}}>
+                <Badge status={s.status || "waitlist"} />
+                <span style={{fontSize:11,color:C.text3}}>{fmtDate(s.created_at ? s.created_at.split("T")[0] : "")}</span>
+              </div>
+            </div>
+          ))}
+        </>) : (<>
         <div style={{display:"grid",gridTemplateColumns:"1.8fr 1fr 80px 100px 80px",gap:12,padding:"9px 18px",borderBottom:`0.5px solid ${C.border}`,background:C.bg2}}>
           {["Company","Email","Status","Signed up","Source"].map(h=>(
             <span key={h} style={{fontSize:11,color:C.text3,textTransform:"uppercase",letterSpacing:0.6,fontWeight:500}}>{h}</span>
@@ -712,6 +859,7 @@ export default function AdminApp() {
             <div style={{fontSize:12,color:C.text3}}>{s.source || "—"}</div>
           </div>
         ))}
+        </>)}
         {signups.length === 0 && (
           <div style={{textAlign:"center",color:C.text3,padding:32,fontSize:13}}>No signups yet.</div>
         )}
@@ -756,38 +904,62 @@ export default function AdminApp() {
   const viewMap = { dashboard:renderDashboard, customers:renderCustomers, invoices:renderInvoices, health:renderHealth, signups:renderSignups, support:renderSupportNotes };
   const viewTitles = { dashboard:"Dashboard", customers:selectedUser?selectedUser.company:"Customers", invoices:"All invoices", health:"Health tracker", signups:"Beta signups", support:"Support notes" };
 
-  return (
-    <div style={{display:"grid",gridTemplateColumns:"220px 1fr",minHeight:"100vh",fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",fontSize:14,color:C.text,background:C.bg}}>
-      {/* SIDEBAR */}
-      <aside style={{background:C.sidebar,display:"flex",flexDirection:"column",height:"100vh",position:"sticky",top:0}}>
-        <div style={{padding:"20px 18px 16px",borderBottom:"0.5px solid rgba(255,255,255,0.08)"}}>
+  const sidebarContent = (
+    <>
+      <div style={{padding:"20px 18px 16px",borderBottom:"0.5px solid rgba(255,255,255,0.08)"}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
           <div style={{fontSize:17,fontWeight:800,letterSpacing:-0.5,color:"#fff"}}>pallet<span style={{color:C.green}}>bill</span></div>
-          <div style={{fontSize:11,color:"rgba(255,255,255,0.4)",marginTop:1}}>Admin Panel</div>
+          {isMobile && <button onClick={()=>setMobileMenu(false)} style={{background:"none",border:"none",color:"rgba(255,255,255,0.6)",fontSize:20,cursor:"pointer",padding:0}}>✕</button>}
         </div>
-        <nav style={{padding:8,flex:1}}>
-          {navItems.map(({id,icon,label,badge,badgeColor})=>(
-            <div key={id} style={{display:"flex",alignItems:"center",gap:9,padding:"8px 10px",borderRadius:8,cursor:"pointer",color:view===id?"#fff":C.sidebarText,background:view===id?C.sidebarActive:"transparent",fontWeight:view===id?600:400,fontSize:13,marginBottom:2,transition:"background 0.1s"}}
-              onClick={()=>{setView(id);setSelectedUser(null);}}>
-              <span style={{fontSize:14}}>{icon}</span>
-              {label}
-              {badge ? <span style={{marginLeft:"auto",background:badgeColor||C.green,color:"#fff",fontSize:10,fontWeight:700,padding:"1px 6px",borderRadius:99}}>{badge}</span> : null}
-            </div>
-          ))}
-        </nav>
-        <div style={{padding:"14px 16px",borderTop:"0.5px solid rgba(255,255,255,0.08)"}}>
-          <div style={{fontSize:11,color:"rgba(255,255,255,0.4)",marginBottom:4}}>Logged in as</div>
-          <div style={{fontSize:12,color:"rgba(255,255,255,0.7)",fontWeight:500,marginBottom:10}}>jose.i.chavira.jr</div>
-          <button onClick={()=>{supabase.auth.signOut();setLoggedIn(false);}} style={{...btn("ghost",true),width:"100%",justifyContent:"center",color:"rgba(255,255,255,0.5)",background:"rgba(255,255,255,0.06)",border:"0.5px solid rgba(255,255,255,0.1)"}}>Sign out</button>
-        </div>
-      </aside>
+        <div style={{fontSize:11,color:"rgba(255,255,255,0.4)",marginTop:1}}>Admin Panel</div>
+      </div>
+      <nav style={{padding:8,flex:1}}>
+        {navItems.map(({id,icon,label,badge:b,badgeColor})=>(
+          <div key={id} style={{display:"flex",alignItems:"center",gap:9,padding:"8px 10px",borderRadius:8,cursor:"pointer",color:view===id?"#fff":C.sidebarText,background:view===id?C.sidebarActive:"transparent",fontWeight:view===id?600:400,fontSize:13,marginBottom:2,transition:"background 0.1s"}}
+            onClick={()=>{setView(id);setSelectedUser(null);setMobileMenu(false);}}>
+            <span style={{fontSize:14}}>{icon}</span>
+            {label}
+            {b ? <span style={{marginLeft:"auto",background:badgeColor||C.green,color:"#fff",fontSize:10,fontWeight:700,padding:"1px 6px",borderRadius:99}}>{b}</span> : null}
+          </div>
+        ))}
+      </nav>
+      <div style={{padding:"14px 16px",borderTop:"0.5px solid rgba(255,255,255,0.08)"}}>
+        <div style={{fontSize:11,color:"rgba(255,255,255,0.4)",marginBottom:4}}>Logged in as</div>
+        <div style={{fontSize:12,color:"rgba(255,255,255,0.7)",fontWeight:500,marginBottom:10}}>jose.i.chavira.jr</div>
+        <button onClick={()=>{supabase.auth.signOut();setLoggedIn(false);}} style={{...btn("ghost",true),width:"100%",justifyContent:"center",color:"rgba(255,255,255,0.5)",background:"rgba(255,255,255,0.06)",border:"0.5px solid rgba(255,255,255,0.1)"}}>Sign out</button>
+      </div>
+    </>
+  );
+
+  return (
+    <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"220px 1fr",minHeight:"100vh",fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",fontSize:14,color:C.text,background:C.bg}}>
+      {/* SIDEBAR - desktop */}
+      {!isMobile && (
+        <aside style={{background:C.sidebar,display:"flex",flexDirection:"column",height:"100vh",position:"sticky",top:0}}>
+          {sidebarContent}
+        </aside>
+      )}
+
+      {/* SIDEBAR - mobile overlay */}
+      {isMobile && mobileMenu && (
+        <>
+          <div onClick={()=>setMobileMenu(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:998}} />
+          <aside style={{position:"fixed",top:0,left:0,bottom:0,width:260,background:C.sidebar,display:"flex",flexDirection:"column",zIndex:999,boxShadow:"4px 0 20px rgba(0,0,0,0.3)",transition:"transform 0.2s"}}>
+            {sidebarContent}
+          </aside>
+        </>
+      )}
 
       {/* MAIN */}
       <div style={{display:"flex",flexDirection:"column",minHeight:"100vh",overflow:"hidden"}}>
         <div style={{background:C.card,borderBottom:`0.5px solid ${C.border}`,padding:"13px 24px",display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0}}>
-          <div style={{fontSize:15,fontWeight:600}}>{viewTitles[view]||view}</div>
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            {isMobile && <button onClick={()=>setMobileMenu(true)} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",padding:"2px 6px",color:C.text}}>☰</button>}
+            <div style={{fontSize:15,fontWeight:600}}>{viewTitles[view]||view}</div>
+          </div>
           <div style={{display:"flex",gap:8}}>
-            <Btn sm onClick={()=>window.open(CALENDLY,"_blank")}>📅 Book call</Btn>
-            <Btn sm onClick={()=>window.open(`mailto:?subject=PalletBill Update`,"_blank")}>✉ Email all</Btn>
+            {!isMobile && <Btn sm onClick={()=>window.open(CALENDLY,"_blank")}>📅 Book call</Btn>}
+            {!isMobile && <Btn sm onClick={()=>window.open(`mailto:?subject=PalletBill Update`,"_blank")}>✉ Email all</Btn>}
           </div>
         </div>
         {(viewMap[view]||renderDashboard)()}
