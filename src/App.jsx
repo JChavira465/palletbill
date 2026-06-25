@@ -316,6 +316,43 @@ function AuthGate() {
 export default AuthGate;
 
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
+// ─── CSV EXPORT HELPER ───────────────────────────────────────────────────────
+const downloadCSV = (data, filename) => {
+  if (!data.length) return;
+  const headers = Object.keys(data[0]);
+  const csvRows = [headers.join(",")];
+  data.forEach(row => {
+    csvRows.push(headers.map(h => {
+      const val = row[h] == null ? "" : String(row[h]);
+      return val.includes(",") || val.includes('"') || val.includes("\n") ? `"${val.replace(/"/g, '""')}"` : val;
+    }).join(","));
+  });
+  const blob = new Blob([csvRows.join("\n")], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+};
+
+// ─── PDF DOWNLOAD HELPER ─────────────────────────────────────────────────────
+const downloadPDF = (inv, companyName, companyAddress) => {
+  const lineItemsHTML = (inv.lineItems || []).map(li => {
+    const amt = (parseFloat(li.qty) || 0) * (parseFloat(li.rate) || 0);
+    return `<tr><td style="padding:9px 0;border-bottom:1px solid #eee;font-size:13px">${li.desc}</td><td style="padding:9px 0;border-bottom:1px solid #eee;font-size:13px">${li.qty}</td><td style="padding:9px 0;border-bottom:1px solid #eee;font-size:13px">$${(parseFloat(li.rate)||0).toFixed(2)}</td><td style="padding:9px 0;border-bottom:1px solid #eee;font-size:13px;text-align:right;font-weight:500">$${amt.toFixed(2)}</td></tr>`;
+  }).join("");
+  const html = `<!DOCTYPE html><html><head><title>Invoice ${inv.id}</title><style>body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;margin:40px;color:#1a1a18}table{width:100%;border-collapse:collapse}@media print{body{margin:20px}}</style></head><body>
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px"><div><div style="font-size:18px;font-weight:700">${companyName}</div><div style="font-size:12px;color:#5a5a56;margin-top:3px">${companyAddress.replace(/\n/g, " · ")}</div></div><div style="text-align:right"><div style="font-size:24px;font-weight:700;color:#1D9E75">INVOICE</div><div style="font-size:12px;color:#9a9a94">${inv.id}</div></div></div>
+    <div style="display:flex;justify-content:space-between;margin-bottom:20px;padding-bottom:20px;border-bottom:1px solid #eee"><div><div style="font-size:10px;color:#9a9a94;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:4px">Bill to</div><div style="font-size:13px;font-weight:600">${inv.client}</div><div style="font-size:12px;color:#5a5a56">${inv.email}</div></div><div style="text-align:right"><div style="font-size:10px;color:#9a9a94;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:4px">Payment due</div><div style="font-size:13px;font-weight:700">${inv.dueDate || "—"}</div></div></div>
+    <table><thead><tr><th style="font-size:10px;text-transform:uppercase;letter-spacing:0.8px;color:#9a9a94;padding:0 0 8px;border-bottom:1px solid #eee;text-align:left;font-weight:500">Description</th><th style="font-size:10px;text-transform:uppercase;letter-spacing:0.8px;color:#9a9a94;padding:0 0 8px;border-bottom:1px solid #eee;text-align:left;font-weight:500">Qty</th><th style="font-size:10px;text-transform:uppercase;letter-spacing:0.8px;color:#9a9a94;padding:0 0 8px;border-bottom:1px solid #eee;text-align:left;font-weight:500">Rate</th><th style="font-size:10px;text-transform:uppercase;letter-spacing:0.8px;color:#9a9a94;padding:0 0 8px;border-bottom:1px solid #eee;text-align:right;font-weight:500">Amount</th></tr></thead><tbody>${lineItemsHTML}</tbody></table>
+    <div style="display:flex;justify-content:flex-end;margin-top:16px"><div style="text-align:right"><div style="font-size:20px;font-weight:700;color:#0F6E56">$${Math.abs(inv.total).toFixed(2)}</div><div style="font-size:12px;color:#9a9a94;margin-top:2px">Total due</div></div></div>
+  </body></html>`;
+  const w = window.open("", "_blank");
+  w.document.write(html);
+  w.document.close();
+  w.focus();
+  setTimeout(() => { w.print(); }, 500);
+};
+
 function PalletBill({ session }) {
   const userId = session.user.id;
   const [view, setView] = useState("dashboard");
@@ -330,6 +367,8 @@ function PalletBill({ session }) {
   const [search, setSearch] = useState("");
   const [stageFilter, setStageFilter] = useState("");
   const [invStatusFilter, setInvStatusFilter] = useState("");
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [mobileMenu, setMobileMenu] = useState(false);
   const [lineItems, setLineItems] = useState([{ desc: "Pallet storage", qty: "", rate: "" }, { desc: "Inbound handling", qty: "", rate: "" }]);
   const [invForm, setInvForm] = useState({ clientId: "", client: "", email: "", invNum: "", invDate: today(), dueDate: "", periodStart: "", periodEnd: "", terms: "15", currency: "USD", discount: "0", tax: "0", paymentInstructions: "ACH: Routing 121000248 · Account 4829301847\nChecks payable to: Your Company LLC", terms_text: "Payment due within agreed terms. Late payments subject to 1.5% monthly interest.", notes: "" });
   const [contactForm, setContactForm] = useState({ name: "", title: "", company: "", email: "", phone: "", city: "", stage: "Lead", value: "", source: "", tags: "", notes: "" });
@@ -392,12 +431,19 @@ function PalletBill({ session }) {
     loadData();
   }, [userId]);
 
+  // ── MOBILE RESPONSIVE ──
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
   const showToast = (msg, type = "success") => {
     setToast({ msg, type, visible: true });
     setTimeout(() => setToast(t => ({ ...t, visible: false })), 3000);
   };
 
-  const go = (v) => { setView(v); setSelectedContact(null); setSelectedInvoice(null); };
+  const go = (v) => { setView(v); setSelectedContact(null); setSelectedInvoice(null); setMobileMenu(false); };
 
   // ── NAV ITEMS ──
   const navGroups = [
@@ -569,12 +615,65 @@ function PalletBill({ session }) {
   const renderDashboard = () => (
     <div style={{ flex: 1, overflowY: "auto" }}>
       <div style={{ padding: 24 }}>
-        <div style={s.statsGrid}>
+        <div style={{ ...s.statsGrid, gridTemplateColumns: isMobile ? "repeat(2,1fr)" : "repeat(4,1fr)" }}>
           <StatCard label="Outstanding" value={fmtMoney(outstanding)} change={`${invoices.filter(i => ["sent", "viewed"].includes(i.status)).length} pending invoices`} />
           <StatCard label="Collected" value={fmtMoney(collected)} change="↑ 8% vs last month" changeType="up" />
           <StatCard label="Pipeline value" value={fmtMoney(pipeline_value)} change={`${contacts.filter(c => c.stage === "Trial").length} in trial`} changeType="up" />
           <StatCard label="Contacts" value={contacts.length} change={`${customerCount} customers · ${trialCount} in trial`} />
         </div>
+
+        {/* Extra metric cards */}
+        <div style={{ ...s.statsGrid, gridTemplateColumns: isMobile ? "1fr" : "repeat(3,1fr)" }}>
+          <StatCard label="Avg days to pay" value={(() => {
+            const paid = invoices.filter(i => i.status === "paid" && i.created);
+            if (!paid.length) return "—";
+            const avg = paid.reduce((sum, i) => { const d = Math.max(0, Math.round((new Date() - new Date(i.created + "T00:00:00")) / 86400000)); return sum + d; }, 0) / paid.length;
+            return Math.round(avg);
+          })()} change="days average" />
+          <StatCard label="Collection rate" value={(() => {
+            const nonDraft = invoices.filter(i => i.status !== "draft");
+            if (!nonDraft.length) return "0%";
+            return Math.round((nonDraft.filter(i => i.status === "paid").length / nonDraft.length) * 100) + "%";
+          })()} change={`${invoices.filter(i => i.status === "paid").length} of ${invoices.filter(i => i.status !== "draft").length} invoices`} changeType="up" />
+          <StatCard label="Active clients" value={contacts.filter(c => c.stage === "Customer" || c.stage === "Trial").length} change={`${contacts.filter(c => c.stage === "Customer").length} customers + ${contacts.filter(c => c.stage === "Trial").length} trials`} />
+        </div>
+
+        {/* Revenue chart — last 6 months */}
+        {(() => {
+          const paidInvoices = invoices.filter(i => i.status === "paid" && i.created);
+          const months = [];
+          const now = new Date();
+          for (let m = 5; m >= 0; m--) {
+            const d = new Date(now.getFullYear(), now.getMonth() - m, 1);
+            const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+            const label = d.toLocaleDateString("en-US", { month: "short" });
+            const total = paidInvoices.filter(i => i.created.startsWith(key)).reduce((s, i) => s + i.total, 0);
+            months.push({ label, total, key });
+          }
+          const maxVal = Math.max(...months.map(m => m.total), 1);
+          const chartH = 160;
+          const barW = 48;
+          const gap = 20;
+          const totalW = months.length * (barW + gap) - gap;
+          return (
+            <div style={{ ...s.card(14), padding: "18px 20px" }}>
+              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 14 }}>Revenue — last 6 months</div>
+              <svg width="100%" height={chartH + 30} viewBox={`0 0 ${totalW + 20} ${chartH + 30}`} style={{ display: "block" }}>
+                {months.map((m, i) => {
+                  const barH = maxVal > 0 ? (m.total / maxVal) * chartH : 0;
+                  const x = i * (barW + gap);
+                  return (
+                    <g key={m.key}>
+                      <rect x={x} y={chartH - barH} width={barW} height={barH} rx={6} fill={C.green} opacity={0.85} />
+                      {m.total > 0 && <text x={x + barW / 2} y={chartH - barH - 6} textAnchor="middle" fontSize={10} fill={C.text2} fontWeight={600}>${Math.round(m.total).toLocaleString()}</text>}
+                      <text x={x + barW / 2} y={chartH + 16} textAnchor="middle" fontSize={11} fill={C.text3}>{m.label}</text>
+                    </g>
+                  );
+                })}
+              </svg>
+            </div>
+          );
+        })()}
 
         {overdueCnt > 0 && (
           <div style={{ background: C.redL, border: `0.5px solid ${C.redB}`, borderRadius: 10, padding: "12px 16px", marginBottom: 14, display: "flex", alignItems: "center", gap: 10, fontSize: 13 }}>
@@ -584,7 +683,7 @@ function PalletBill({ session }) {
           </div>
         )}
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 16 }}>
           <div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
               <div style={{ fontWeight: 600, fontSize: 14 }}>Recent invoices</div>
@@ -659,6 +758,7 @@ function PalletBill({ session }) {
               {PIPELINE_STAGES.map(st => <option key={st}>{st}</option>)}
             </select>
             <div style={{ flex: 1 }} />
+            <Btn sm onClick={() => downloadCSV(filteredContacts.map(c => ({ name: c.name, company: c.company, email: c.email, phone: c.phone, city: c.city, stage: c.stage, value: c.value, source: c.source, lastContact: c.lastContact })), "contacts.csv")}>Export CSV</Btn>
             <Btn variant="primary" onClick={() => setModal("addContact")}><Icon name="plus" size={13} />Add contact</Btn>
           </div>
 
@@ -805,7 +905,7 @@ function PalletBill({ session }) {
           <div style={{ flex: 1 }} />
           <Btn variant="primary" sm onClick={() => setModal("addContact")}><Icon name="plus" size={12} />Add contact</Btn>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(6,1fr)", gap: 10, overflowX: "auto" }}>
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(6,1fr)", gap: 10, overflowX: "auto" }}>
           {PIPELINE_STAGES.map(stage => {
             const stageContacts = contacts.filter(c => c.stage === stage);
             const stageVal = stageContacts.reduce((s, c) => s + (c.value || 0), 0);
@@ -873,6 +973,7 @@ function PalletBill({ session }) {
               <Btn sm onClick={() => setSelectedInvoice(null)}>← Back</Btn>
               <div style={{ flex: 1 }} />
               {inv.status !== "paid" && <Btn sm variant="primary" onClick={() => { markPaid(inv.id); setSelectedInvoice({ ...inv, status: "paid" }); }}>Mark paid</Btn>}
+              <Btn sm onClick={() => downloadPDF(inv, companyName, companyAddress)}>Download PDF</Btn>
               {inv.paymentLinkUrl && inv.status !== "paid" && <Btn sm variant="stripe" onClick={() => { navigator.clipboard.writeText(inv.paymentLinkUrl); showToast("Payment link copied!"); }}>Copy payment link</Btn>}
             </div>
             <div style={{ maxWidth: 640, margin: "0 auto" }}>
@@ -923,6 +1024,7 @@ function PalletBill({ session }) {
               <option value="">All statuses</option>
               {["draft", "sent", "viewed", "paid", "overdue"].map(s => <option key={s}>{s}</option>)}
             </select>
+            <Btn sm onClick={() => downloadCSV(filteredInvoices.map(i => ({ id: i.id, client: i.client, email: i.email, status: i.status, total: i.total, dueDate: i.dueDate, created: i.created })), "invoices.csv")}>Export CSV</Btn>
             <div style={{ flex: 1 }} />
           </div>
           <div style={s.dataTable}>
@@ -958,7 +1060,7 @@ function PalletBill({ session }) {
     const currSym = { USD: "$", EUR: "€", CAD: "C$", MXN: "MX$" }[invForm.currency] || "$";
     const updateLI = (i, field, val) => { const updated = [...lineItems]; updated[i] = { ...updated[i], [field]: val }; setLineItems(updated); };
     return (
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", flex: 1, minHeight: 0, overflow: "hidden" }}>
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", flex: 1, minHeight: 0, overflow: "hidden" }}>
         {/* FORM */}
         <div style={{ padding: 22, overflowY: "auto", borderRight: `0.5px solid ${C.border}`, background: C.bg }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
@@ -1282,9 +1384,11 @@ function PalletBill({ session }) {
   const VIEW_TITLES = { dashboard: "Dashboard", invoices: "All invoices", newInvoice: "New invoice", contacts: selectedContact ? selectedContact.name : "Contacts", pipeline: "Pipeline", activity: "Activity feed", payments: "Payment connections", portal: "Client portal", rates: "Rate card", settings: "Settings" };
 
   return (
-    <div style={s.app}>
+    <div style={{ ...s.app, gridTemplateColumns: isMobile ? "1fr" : "220px 1fr" }}>
+      {/* MOBILE MENU OVERLAY */}
+      {isMobile && mobileMenu && <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 998 }} onClick={() => setMobileMenu(false)} />}
       {/* SIDEBAR */}
-      <aside style={s.sidebar}>
+      <aside style={{ ...s.sidebar, ...(isMobile ? { position: "fixed", left: mobileMenu ? 0 : -260, top: 0, width: 250, zIndex: 999, transition: "left 0.2s", boxShadow: mobileMenu ? "4px 0 20px rgba(0,0,0,0.15)" : "none" } : {}) }}>
         <div style={s.logo}>
           <div style={s.logoMark}>pallet<span style={s.logoSpan}>bill</span></div>
           <div style={s.logoSub}>Invoice + CRM</div>
@@ -1312,9 +1416,12 @@ function PalletBill({ session }) {
       {/* MAIN */}
       <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh", overflow: "hidden" }}>
         <div style={s.topbar}>
-          <div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            {isMobile && <button onClick={() => setMobileMenu(m => !m)} style={{ background: "none", border: "none", cursor: "pointer", padding: 4, display: "flex", flexDirection: "column", gap: 4 }}><span style={{ display: "block", width: 18, height: 2, background: C.text, borderRadius: 1 }} /><span style={{ display: "block", width: 18, height: 2, background: C.text, borderRadius: 1 }} /><span style={{ display: "block", width: 18, height: 2, background: C.text, borderRadius: 1 }} /></button>}
+            <div>
             <div style={s.topTitle}>{VIEW_TITLES[view] || view}</div>
             {view === "dashboard" && <div style={s.topSub}>{new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })}</div>}
+          </div>
           </div>
           <div style={s.topActions}>
             {view === "contacts" && !selectedContact && <Btn variant="primary" sm onClick={() => setModal("addContact")}><Icon name="plus" size={12} />Add contact</Btn>}
