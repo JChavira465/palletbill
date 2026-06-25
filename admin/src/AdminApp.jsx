@@ -101,9 +101,20 @@ const LoginPage = ({onLogin}) => {
   const [pass,setPass]   = useState("");
   const [err,setErr]     = useState("");
   const [loading,setLoading] = useState(false);
+  const [mode,setMode]   = useState("login"); // login | forgot
 
   const submit = async () => {
     setErr("");
+    if(mode==="forgot"){
+      if(!email){setErr("Enter your email address");return;}
+      setLoading(true);
+      const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin });
+      setLoading(false);
+      if(error){setErr(error.message);return;}
+      setMode("login");
+      alert("Password reset email sent! Check your inbox.");
+      return;
+    }
     if(!pass){setErr("Password required");return;}
     setLoading(true);
     const { data, error } = await supabase.auth.signInWithPassword({ email, password: pass });
@@ -124,19 +135,22 @@ const LoginPage = ({onLogin}) => {
       <div style={{background:C.card,borderRadius:16,padding:"36px 32px",maxWidth:380,width:"100%",boxShadow:"0 20px 60px rgba(0,0,0,0.3)"}}>
         <div style={{textAlign:"center",marginBottom:28}}>
           <div style={{fontSize:26,fontWeight:800,letterSpacing:-0.5,color:C.text}}>pallet<span style={{color:C.green}}>bill</span></div>
-          <div style={{fontSize:13,color:C.text3,marginTop:4}}>Admin Panel</div>
+          <div style={{fontSize:13,color:C.text3,marginTop:4}}>{mode==="forgot"?"Reset your password":"Admin Panel"}</div>
         </div>
         <div style={{marginBottom:14}}>
           <label style={{fontSize:12,color:C.text2,fontWeight:500,display:"block",marginBottom:5}}>Admin email</label>
           <input style={inp} type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="jose.i.chavira.jr@gmail.com" />
         </div>
-        <div style={{marginBottom:20}}>
+        {mode!=="forgot" && <div style={{marginBottom:20}}>
           <label style={{fontSize:12,color:C.text2,fontWeight:500,display:"block",marginBottom:5}}>Password</label>
           <input style={inp} type="password" value={pass} onChange={e=>setPass(e.target.value)} onKeyDown={e=>e.key==="Enter"&&submit()} placeholder="••••••••" />
-        </div>
+        </div>}
+        {mode==="login" && <div style={{textAlign:"right",marginTop:-12,marginBottom:14}}><span style={{fontSize:12,color:C.green,cursor:"pointer",fontWeight:500}} onClick={()=>{setMode("forgot");setErr("");}}>Forgot password?</span></div>}
         {err && <div style={{background:C.redL,color:C.red,padding:"8px 12px",borderRadius:8,fontSize:13,marginBottom:14}}>{err}</div>}
-        <Btn variant="primary" onClick={submit} style={{width:"100%",justifyContent:"center",padding:"10px 0",fontSize:14,opacity:loading?0.6:1}}>{loading?"Signing in...":"Sign in to admin"}</Btn>
-        <div style={{fontSize:11,color:C.text3,textAlign:"center",marginTop:14}}>Admin access only — requires is_admin flag in Supabase</div>
+        <Btn variant="primary" onClick={submit} style={{width:"100%",justifyContent:"center",padding:"10px 0",fontSize:14,opacity:loading?0.6:1}}>{loading?"Please wait...":mode==="forgot"?"Send reset link":"Sign in to admin"}</Btn>
+        <div style={{fontSize:11,color:C.text3,textAlign:"center",marginTop:14}}>
+          {mode==="forgot" ? <span style={{color:C.green,cursor:"pointer",fontWeight:500}} onClick={()=>{setMode("login");setErr("");}}>Back to sign in</span> : "Admin access only — requires is_admin flag in Supabase"}
+        </div>
       </div>
     </div>
   );

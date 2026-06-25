@@ -183,7 +183,7 @@ const Toast = ({ msg, type, visible }) => (
 function AuthGate() {
   const [session, setSession] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [authMode, setAuthMode] = useState("login"); // login | signup
+  const [authMode, setAuthMode] = useState("login"); // login | signup | forgot
   const [authEmail, setAuthEmail] = useState("");
   const [authPass, setAuthPass] = useState("");
   const [authError, setAuthError] = useState("");
@@ -197,6 +197,16 @@ function AuthGate() {
   const handleAuth = async (e) => {
     e.preventDefault();
     setAuthError("");
+    if (authMode === "forgot") {
+      if (!authEmail) { setAuthError("Enter your email address"); return; }
+      const { error } = await supabase.auth.resetPasswordForEmail(authEmail, { redirectTo: window.location.origin });
+      if (error) { setAuthError(error.message); return; }
+      setAuthError("");
+      setAuthMode("login");
+      setAuthPass("");
+      alert("Password reset email sent! Check your inbox.");
+      return;
+    }
     if (authMode === "login") {
       const { error } = await supabase.auth.signInWithPassword({ email: authEmail, password: authPass });
       if (error) setAuthError(error.message);
@@ -222,14 +232,15 @@ function AuthGate() {
     <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", fontFamily: "-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif", background: C.bg }}>
       <form onSubmit={handleAuth} style={{ background: C.card, border: `0.5px solid ${C.border}`, borderRadius: 14, padding: 32, width: 360, boxShadow: "0 4px 20px rgba(0,0,0,0.08)" }}>
         <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 4 }}>pallet<span style={{ color: C.green }}>bill</span></div>
-        <div style={{ fontSize: 12, color: C.text3, marginBottom: 24 }}>{authMode === "login" ? "Sign in to your account" : "Create your account"}</div>
+        <div style={{ fontSize: 12, color: C.text3, marginBottom: 24 }}>{authMode === "forgot" ? "Enter your email to reset your password" : authMode === "login" ? "Sign in to your account" : "Create your account"}</div>
         {authError && <div style={{ background: C.redL, color: C.red, padding: "8px 12px", borderRadius: 8, fontSize: 13, marginBottom: 14 }}>{authError}</div>}
         <div style={{ marginBottom: 14 }}><label style={{ fontSize: 12, color: C.text2, fontWeight: 500, display: "block", marginBottom: 4 }}>Email</label><input style={{ fontFamily: "inherit", fontSize: 13.5, color: C.text, background: C.card, border: `0.5px solid ${C.border2}`, borderRadius: 8, padding: "8px 11px", width: "100%", boxSizing: "border-box" }} type="email" value={authEmail} onChange={e => setAuthEmail(e.target.value)} required /></div>
-        <div style={{ marginBottom: 20 }}><label style={{ fontSize: 12, color: C.text2, fontWeight: 500, display: "block", marginBottom: 4 }}>Password</label><input style={{ fontFamily: "inherit", fontSize: 13.5, color: C.text, background: C.card, border: `0.5px solid ${C.border2}`, borderRadius: 8, padding: "8px 11px", width: "100%", boxSizing: "border-box" }} type="password" value={authPass} onChange={e => setAuthPass(e.target.value)} required minLength={6} /></div>
-        <button type="submit" style={{ width: "100%", background: C.green, color: "#fff", border: "none", padding: "10px 14px", borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", marginBottom: 12 }}>{authMode === "login" ? "Sign in" : "Create account"}</button>
+        {authMode !== "forgot" && <div style={{ marginBottom: 20 }}><label style={{ fontSize: 12, color: C.text2, fontWeight: 500, display: "block", marginBottom: 4 }}>Password</label><input style={{ fontFamily: "inherit", fontSize: 13.5, color: C.text, background: C.card, border: `0.5px solid ${C.border2}`, borderRadius: 8, padding: "8px 11px", width: "100%", boxSizing: "border-box" }} type="password" value={authPass} onChange={e => setAuthPass(e.target.value)} required minLength={6} /></div>}
+        {authMode === "login" && <div style={{ textAlign: "right", marginTop: -12, marginBottom: 14 }}><span style={{ fontSize: 12, color: C.green, cursor: "pointer", fontWeight: 500 }} onClick={() => { setAuthMode("forgot"); setAuthError(""); }}>Forgot password?</span></div>}
+        <button type="submit" style={{ width: "100%", background: C.green, color: "#fff", border: "none", padding: "10px 14px", borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", marginBottom: 12 }}>{authMode === "forgot" ? "Send reset link" : authMode === "login" ? "Sign in" : "Create account"}</button>
         <div style={{ textAlign: "center", fontSize: 13, color: C.text3 }}>
-          {authMode === "login" ? "No account? " : "Already have one? "}
-          <span style={{ color: C.green, cursor: "pointer", fontWeight: 500 }} onClick={() => { setAuthMode(authMode === "login" ? "signup" : "login"); setAuthError(""); }}>{authMode === "login" ? "Sign up" : "Sign in"}</span>
+          {authMode === "forgot" ? "Remember your password? " : authMode === "login" ? "No account? " : "Already have one? "}
+          <span style={{ color: C.green, cursor: "pointer", fontWeight: 500 }} onClick={() => { setAuthMode(authMode === "signup" ? "login" : authMode === "forgot" ? "login" : "signup"); setAuthError(""); }}>{authMode === "forgot" ? "Sign in" : authMode === "login" ? "Sign up" : "Sign in"}</span>
         </div>
       </form>
     </div>
