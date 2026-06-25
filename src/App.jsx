@@ -1292,7 +1292,7 @@ function PalletBill({ session }) {
         <div style={s.card()}>
           <div style={s.cardHeader}><div style={s.cardTitle}>Payout summary</div></div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10 }}>
-            {[["$14,830", "Collected this month"], ["$421", "Processing fees"], ["$14,409", "Net to bank"]].map(([val, label]) => (
+            {(() => { const thisMonth = new Date().getMonth(); const thisYear = new Date().getFullYear(); const monthlyCollected = invoices.filter(i => i.status === "paid" && i.created && new Date(i.created + "T00:00:00").getMonth() === thisMonth && new Date(i.created + "T00:00:00").getFullYear() === thisYear).reduce((s, i) => s + i.total, 0); const fees = Math.round(monthlyCollected * 0.029 * 100) / 100; const net = monthlyCollected - fees; return [[fmtMoney(monthlyCollected), "Collected this month"], [fmtMoney(fees), "Processing fees (~2.9%)"], [fmtMoney(net), "Net to bank"]]; })().map(([val, label]) => (
               <div key={label} style={{ background: C.bg2, borderRadius: 10, padding: "14px 16px" }}><div style={{ fontSize: 22, fontWeight: 700, letterSpacing: -0.5 }}>{val}</div><div style={{ fontSize: 11, color: C.text3, marginTop: 2, textTransform: "uppercase", letterSpacing: 0.5 }}>{label}</div></div>
             ))}
           </div>
