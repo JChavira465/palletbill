@@ -187,6 +187,13 @@ export default function AdminApp() {
         supabase.from("signups").select("*").order("created_at", { ascending: false }),
       ]);
 
+      if (profilesRes.error) console.error("Profiles error:", profilesRes.error);
+      if (invoicesRes.error) console.error("Invoices error:", invoicesRes.error);
+      if (activitiesRes.error) console.error("Activities error:", activitiesRes.error);
+      if (notesRes.error) console.error("Notes error:", notesRes.error);
+      if (signupsRes.error) console.error("Signups error:", signupsRes.error);
+      console.log("Profiles loaded:", profilesRes.data?.length, "Invoices:", invoicesRes.data?.length);
+
       const allInvoices = invoicesRes.data || [];
       setInvoices(allInvoices.map(inv => ({
         id: inv.id,
