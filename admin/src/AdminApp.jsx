@@ -119,10 +119,11 @@ const LoginPage = ({onLogin}) => {
     setLoading(true);
     const { data, error } = await supabase.auth.signInWithPassword({ email, password: pass });
     if(error){setErr(error.message);setLoading(false);return;}
-    const { data: profile } = await supabase.from("profiles").select("is_admin").eq("id", data.user.id).single();
-    if(!profile?.is_admin){
+    const { data: profile, error: profileErr } = await supabase.from("profiles").select("is_admin").eq("id", data.user.id).single();
+    console.log("Profile lookup:", { profile, profileErr, userId: data.user.id });
+    if(profileErr || !profile?.is_admin){
       await supabase.auth.signOut();
-      setErr("Access denied — admin only");
+      setErr(profileErr ? `Profile error: ${profileErr.message}` : "Access denied — admin only");
       setLoading(false);
       return;
     }
