@@ -179,6 +179,14 @@ const Toast = ({ msg, type, visible }) => (
   </div>
 );
 
+// ─── PLAN DATA ───────────────────────────────────────────────────────────────
+const PLANS = [
+  { id: "trial", name: "Free Trial", price: 0, desc: "60 days free — full access", features: ["Unlimited invoices", "CRM + pipeline", "Rate cards"] },
+  { id: "starter", name: "Starter", price: 49, desc: "$49/mo — for solo operators", features: ["Unlimited invoices", "CRM + pipeline", "Rate cards"] },
+  { id: "growth", name: "Growth", price: 99, desc: "$99/mo — most popular", features: ["Everything in Starter", "Payment links", "Client portal", "Priority support"] },
+  { id: "pro", name: "Pro", price: 199, desc: "$199/mo — for teams", features: ["Everything in Growth", "Multi-user access", "API access", "Custom branding"] },
+];
+
 // ─── AUTH WRAPPER ─────────────────────────────────────────────────────────────
 function AuthGate() {
   const [session, setSession] = useState(null);
@@ -187,6 +195,8 @@ function AuthGate() {
   const [authEmail, setAuthEmail] = useState("");
   const [authPass, setAuthPass] = useState("");
   const [authError, setAuthError] = useState("");
+  const [authLoading2, setAuthLoading2] = useState(false);
+  const [signupForm, setSignupForm] = useState({ firstName: "", lastName: "", company: "", phone: "", plan: "trial" });
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => { setSession(session); setAuthLoading(false); });
@@ -197,11 +207,12 @@ function AuthGate() {
   const handleAuth = async (e) => {
     e.preventDefault();
     setAuthError("");
+    setAuthLoading2(true);
     if (authMode === "forgot") {
-      if (!authEmail) { setAuthError("Enter your email address"); return; }
+      if (!authEmail) { setAuthError("Enter your email address"); setAuthLoading2(false); return; }
       const { error } = await supabase.auth.resetPasswordForEmail(authEmail, { redirectTo: window.location.origin });
+      setAuthLoading2(false);
       if (error) { setAuthError(error.message); return; }
-      setAuthError("");
       setAuthMode("login");
       setAuthPass("");
       alert("Password reset email sent! Check your inbox.");
@@ -209,35 +220,88 @@ function AuthGate() {
     }
     if (authMode === "login") {
       const { error } = await supabase.auth.signInWithPassword({ email: authEmail, password: authPass });
+      setAuthLoading2(false);
       if (error) setAuthError(error.message);
     } else {
+      if (!signupForm.firstName || !signupForm.lastName || !signupForm.company) { setAuthError("Please fill in all required fields"); setAuthLoading2(false); return; }
       const { data, error } = await supabase.auth.signUp({ email: authEmail, password: authPass });
       if (error) {
+        setAuthLoading2(false);
         if (error.message.toLowerCase().includes("already registered") || error.message.toLowerCase().includes("already exists")) {
           setAuthError("An account with this email already exists. Redirecting to sign in...");
           setTimeout(() => { setAuthMode("login"); setAuthError(""); }, 2000);
         } else {
           setAuthError(error.message);
         }
-      } else if (data?.user?.identities?.length === 0) {
+        return;
+      }
+      if (data?.user?.identities?.length === 0) {
+        setAuthLoading2(false);
         setAuthError("An account with this email already exists. Redirecting to sign in...");
         setTimeout(() => { setAuthMode("login"); setAuthError(""); }, 2000);
+        return;
       }
+      if (data?.user) {
+        const plan = signupForm.plan;
+        const trialEndsAt = plan === "trial" ? new Date(Date.now() + 60 * 86400000).toISOString() : null;
+        await supabase.from("profiles").update({
+          company_name: signupForm.company,
+          phone: signupForm.phone,
+          first_name: signupForm.firstName,
+          last_name: signupForm.lastName,
+          plan,
+          trial_ends_at: trialEndsAt || new Date(Date.now() + 60 * 86400000).toISOString(),
+        }).eq("id", data.user.id);
+      }
+      setAuthLoading2(false);
     }
   };
+
+  const inputStyle = { fontFamily: "inherit", fontSize: 13.5, color: C.text, background: C.card, border: `0.5px solid ${C.border2}`, borderRadius: 8, padding: "8px 11px", width: "100%", boxSizing: "border-box" };
+  const labelStyle = { fontSize: 12, color: C.text2, fontWeight: 500, display: "block", marginBottom: 4 };
 
   if (authLoading) return <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", fontFamily: "-apple-system,sans-serif", color: C.text3 }}>Loading...</div>;
 
   if (!session) return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", fontFamily: "-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif", background: C.bg }}>
-      <form onSubmit={handleAuth} style={{ background: C.card, border: `0.5px solid ${C.border}`, borderRadius: 14, padding: 32, width: 360, boxShadow: "0 4px 20px rgba(0,0,0,0.08)" }}>
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", fontFamily: "-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif", background: C.bg, padding: 20 }}>
+      <form onSubmit={handleAuth} style={{ background: C.card, border: `0.5px solid ${C.border}`, borderRadius: 14, padding: 32, width: authMode === "signup" ? 480 : 360, boxShadow: "0 4px 20px rgba(0,0,0,0.08)" }}>
         <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 4 }}>pallet<span style={{ color: C.green }}>bill</span></div>
-        <div style={{ fontSize: 12, color: C.text3, marginBottom: 24 }}>{authMode === "forgot" ? "Enter your email to reset your password" : authMode === "login" ? "Sign in to your account" : "Create your account"}</div>
+        <div style={{ fontSize: 12, color: C.text3, marginBottom: 20 }}>{authMode === "forgot" ? "Enter your email to reset your password" : authMode === "login" ? "Sign in to your account" : "Create your account"}</div>
         {authError && <div style={{ background: C.redL, color: C.red, padding: "8px 12px", borderRadius: 8, fontSize: 13, marginBottom: 14 }}>{authError}</div>}
-        <div style={{ marginBottom: 14 }}><label style={{ fontSize: 12, color: C.text2, fontWeight: 500, display: "block", marginBottom: 4 }}>Email</label><input style={{ fontFamily: "inherit", fontSize: 13.5, color: C.text, background: C.card, border: `0.5px solid ${C.border2}`, borderRadius: 8, padding: "8px 11px", width: "100%", boxSizing: "border-box" }} type="email" value={authEmail} onChange={e => setAuthEmail(e.target.value)} required /></div>
-        {authMode !== "forgot" && <div style={{ marginBottom: 20 }}><label style={{ fontSize: 12, color: C.text2, fontWeight: 500, display: "block", marginBottom: 4 }}>Password</label><input style={{ fontFamily: "inherit", fontSize: 13.5, color: C.text, background: C.card, border: `0.5px solid ${C.border2}`, borderRadius: 8, padding: "8px 11px", width: "100%", boxSizing: "border-box" }} type="password" value={authPass} onChange={e => setAuthPass(e.target.value)} required minLength={6} /></div>}
+
+        {authMode === "signup" && (
+          <>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+              <div><label style={labelStyle}>First name *</label><input style={inputStyle} value={signupForm.firstName} onChange={e => setSignupForm(f => ({ ...f, firstName: e.target.value }))} required placeholder="Jose" /></div>
+              <div><label style={labelStyle}>Last name *</label><input style={inputStyle} value={signupForm.lastName} onChange={e => setSignupForm(f => ({ ...f, lastName: e.target.value }))} required placeholder="Chavira" /></div>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+              <div><label style={labelStyle}>Business name *</label><input style={inputStyle} value={signupForm.company} onChange={e => setSignupForm(f => ({ ...f, company: e.target.value }))} required placeholder="Your 3PL Company" /></div>
+              <div><label style={labelStyle}>Phone</label><input style={inputStyle} type="tel" value={signupForm.phone} onChange={e => setSignupForm(f => ({ ...f, phone: e.target.value }))} placeholder="(254) 555-0100" /></div>
+            </div>
+          </>
+        )}
+
+        <div style={{ marginBottom: 12 }}><label style={labelStyle}>Email *</label><input style={inputStyle} type="email" value={authEmail} onChange={e => setAuthEmail(e.target.value)} required placeholder="you@company.com" /></div>
+        {authMode !== "forgot" && <div style={{ marginBottom: authMode === "signup" ? 16 : 20 }}><label style={labelStyle}>Password *</label><input style={inputStyle} type="password" value={authPass} onChange={e => setAuthPass(e.target.value)} required minLength={6} placeholder="Min 6 characters" /></div>}
         {authMode === "login" && <div style={{ textAlign: "right", marginTop: -12, marginBottom: 14 }}><span style={{ fontSize: 12, color: C.green, cursor: "pointer", fontWeight: 500 }} onClick={() => { setAuthMode("forgot"); setAuthError(""); }}>Forgot password?</span></div>}
-        <button type="submit" style={{ width: "100%", background: C.green, color: "#fff", border: "none", padding: "10px 14px", borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", marginBottom: 12 }}>{authMode === "forgot" ? "Send reset link" : authMode === "login" ? "Sign in" : "Create account"}</button>
+
+        {authMode === "signup" && (
+          <div style={{ marginBottom: 18 }}>
+            <label style={{ ...labelStyle, marginBottom: 8 }}>Select your plan</label>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
+              {PLANS.map(p => (
+                <div key={p.id} onClick={() => setSignupForm(f => ({ ...f, plan: p.id }))} style={{ border: `1.5px solid ${signupForm.plan === p.id ? C.green : C.border2}`, borderRadius: 10, padding: "12px 10px", cursor: "pointer", background: signupForm.plan === p.id ? C.greenL : C.card, transition: "all 0.15s", textAlign: "center" }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: signupForm.plan === p.id ? C.greenD : C.text, marginBottom: 2 }}>{p.name}</div>
+                  <div style={{ fontSize: 18, fontWeight: 800, color: signupForm.plan === p.id ? C.greenD : C.text, marginBottom: 4 }}>{p.price === 0 ? "Free" : `$${p.price}`}</div>
+                  <div style={{ fontSize: 10, color: C.text3 }}>{p.price === 0 ? "60 days" : "/month"}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <button type="submit" disabled={authLoading2} style={{ width: "100%", background: C.green, color: "#fff", border: "none", padding: "10px 14px", borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", marginBottom: 12, opacity: authLoading2 ? 0.6 : 1 }}>{authLoading2 ? "Please wait..." : authMode === "forgot" ? "Send reset link" : authMode === "login" ? "Sign in" : "Create account"}</button>
         <div style={{ textAlign: "center", fontSize: 13, color: C.text3 }}>
           {authMode === "forgot" ? "Remember your password? " : authMode === "login" ? "No account? " : "Already have one? "}
           <span style={{ color: C.green, cursor: "pointer", fontWeight: 500 }} onClick={() => { setAuthMode(authMode === "signup" ? "login" : authMode === "forgot" ? "login" : "signup"); setAuthError(""); }}>{authMode === "forgot" ? "Sign in" : authMode === "login" ? "Sign up" : "Sign in"}</span>

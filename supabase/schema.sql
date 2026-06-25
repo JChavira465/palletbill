@@ -11,6 +11,8 @@ create extension if not exists "uuid-ossp";
 create table if not exists public.profiles (
   id              uuid primary key references auth.users(id) on delete cascade,
   email           text not null,
+  first_name      text,
+  last_name       text,
   company_name    text not null default 'PalletBill',
   address         text,
   phone           text,
