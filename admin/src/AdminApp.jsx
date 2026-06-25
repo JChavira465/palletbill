@@ -23,26 +23,26 @@ const C = {
   sidebar:"#0F1923",sidebarText:"rgba(255,255,255,0.75)",sidebarActive:"rgba(255,255,255,0.12)",
 };
 
-// ─── MOCK DATA (replace with Supabase calls) ─────────────────────────────────
-const MOCK_USERS = [
-  { id:"u1", email:"jeffkogut@crossroads3pl.com",    company:"Crossroads 3PL Solutions",       plan:"trial",   trialDays:55, invoiceCount:1,  totalBilled:1188,  lastActive:"2026-06-23", status:"active",   signupDate:"2026-06-23", city:"Temple, TX",       health:"green" },
-  { id:"u2", email:"oneclick3pl@gmail.com",           company:"One Click 3PL",                  plan:"trial",   trialDays:55, invoiceCount:0,  totalBilled:0,     lastActive:"2026-06-23", status:"active",   signupDate:"2026-06-23", city:"Temple, TX",       health:"yellow" },
-  { id:"u3", email:"info@brownboxninja.com",           company:"Brown Box Ninja",                plan:"trial",   trialDays:55, invoiceCount:0,  totalBilled:0,     lastActive:"2026-06-22", status:"active",   signupDate:"2026-06-23", city:"Temple, TX",       health:"yellow" },
-  { id:"u4", email:"hello@simplfulfillment.com",       company:"Simpl Fulfillment",              plan:"trial",   trialDays:53, invoiceCount:2,  totalBilled:2430,  lastActive:"2026-06-24", status:"active",   signupDate:"2026-06-20", city:"Austin, TX",       health:"green" },
-  { id:"u5", email:"info@nationwideprestige3pl.com",   company:"Nationwide Prestige Warehousing",plan:"trial",   trialDays:55, invoiceCount:0,  totalBilled:0,     lastActive:"2026-06-20", status:"idle",     signupDate:"2026-06-23", city:"Grand Prairie, TX",health:"yellow" },
-  { id:"u6", email:"info@flufflefulfill.com",          company:"Fluffle Fulfillment",            plan:"trial",   trialDays:55, invoiceCount:0,  totalBilled:0,     lastActive:"2026-06-19", status:"idle",     signupDate:"2026-06-23", city:"Buda, TX",         health:"red" },
-  { id:"u7", email:"info@warehouse-pro.com",           company:"Warehouse-Pro",                  plan:"trial",   trialDays:55, invoiceCount:0,  totalBilled:0,     lastActive:"never",      status:"inactive", signupDate:"2026-06-23", city:"Rockwall, TX",     health:"red" },
-  { id:"u8", email:"info@3plbridge.com",               company:"3PL Bridge",                     plan:"trial",   trialDays:55, invoiceCount:0,  totalBilled:0,     lastActive:"2026-06-23", status:"active",   signupDate:"2026-06-23", city:"Dallas, TX",       health:"green" },
-];
+// ─── DATA HELPERS ────────────────────────────────────────────────────────────
+const computeHealth = (updatedAt) => {
+  if (!updatedAt) return "red";
+  const days = (Date.now() - new Date(updatedAt).getTime()) / 86400000;
+  if (days <= 3) return "green";
+  if (days <= 7) return "yellow";
+  return "red";
+};
 
-const MOCK_INVOICES = [
-  { id:"inv1", userId:"u1", number:"INV-1001", client:"Crossroads 3PL Solutions", amount:1188, status:"sent",    date:"2026-06-23" },
-  { id:"inv2", userId:"u4", number:"INV-1002", client:"Simpl Fulfillment",        amount:1242, status:"paid",    date:"2026-06-20" },
-  { id:"inv3", userId:"u4", number:"INV-1003", client:"Simpl Fulfillment",        amount:1188, status:"overdue", date:"2026-06-01" },
-];
+const computeStatus = (updatedAt) => {
+  if (!updatedAt) return "inactive";
+  const days = (Date.now() - new Date(updatedAt).getTime()) / 86400000;
+  if (days <= 3) return "active";
+  if (days <= 7) return "idle";
+  return "inactive";
+};
 
-const MOCK_SUPPORT = {
-  u1:[], u2:[], u3:[], u4:[], u5:[], u6:[], u7:[], u8:[],
+const fmtDateShort = (d) => {
+  if (!d) return "never";
+  try { return new Date(d).toISOString().split("T")[0]; } catch { return "never"; }
 };
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
@@ -146,15 +146,86 @@ const LoginPage = ({onLogin}) => {
 export default function AdminApp() {
   const [loggedIn,setLoggedIn]     = useState(false);
   const [authLoading,setAuthLoading] = useState(true);
+  const [dataLoading,setDataLoading] = useState(true);
   const [view,setView]             = useState("dashboard");
   const [selectedUser,setSelectedUser] = useState(null);
-  const [users,setUsers]           = useState(MOCK_USERS);
-  const [supportNotes,setSupportNotes] = useState(MOCK_SUPPORT);
+  const [users,setUsers]           = useState([]);
+  const [invoices,setInvoices]     = useState([]);
+  const [supportNotes,setSupportNotes] = useState({});
+  const [signups,setSignups]       = useState([]);
   const [noteText,setNoteText]     = useState("");
   const [search,setSearch]         = useState("");
   const [healthFilter,setHealthFilter] = useState("");
   const [toast,setToast]           = useState({msg:"",visible:false});
   const [extendId,setExtendId]     = useState(null);
+
+  // ─── Load real data from Supabase ──────────────────────────────────────────
+  const loadData = async () => {
+    setDataLoading(true);
+    try {
+      // Fetch profiles, invoices, support notes, signups in parallel
+      const [profilesRes, invoicesRes, notesRes, signupsRes] = await Promise.all([
+        supabase.from("profiles").select("*"),
+        supabase.from("invoices").select("*"),
+        supabase.from("support_notes").select("*").order("created_at", { ascending: false }),
+        supabase.from("signups").select("*").order("created_at", { ascending: false }),
+      ]);
+
+      const allInvoices = invoicesRes.data || [];
+      setInvoices(allInvoices.map(inv => ({
+        id: inv.id,
+        userId: inv.user_id,
+        number: inv.invoice_number,
+        client: inv.client_name,
+        clientEmail: inv.client_email,
+        amount: inv.total,
+        status: inv.status,
+        date: inv.issue_date || (inv.created_at ? inv.created_at.split("T")[0] : ""),
+      })));
+
+      // Build support notes grouped by user_id
+      const notesMap = {};
+      (notesRes.data || []).forEach(n => {
+        if (!notesMap[n.user_id]) notesMap[n.user_id] = [];
+        notesMap[n.user_id].push({
+          id: n.id,
+          text: n.note,
+          date: n.created_at ? n.created_at.split("T")[0] : "",
+          admin: n.admin_email,
+        });
+      });
+      setSupportNotes(notesMap);
+
+      setSignups(signupsRes.data || []);
+
+      // Map profiles to user shape
+      const profiles = profilesRes.data || [];
+      const mappedUsers = profiles.map(p => {
+        const userInvs = allInvoices.filter(inv => inv.user_id === p.id);
+        const paidTotal = userInvs.filter(inv => inv.status === "paid").reduce((s, inv) => s + (inv.total || 0), 0);
+        const lastActive = fmtDateShort(p.updated_at);
+        return {
+          id: p.id,
+          email: p.email,
+          company: p.company_name || p.email,
+          plan: p.plan || "trial",
+          trialDays: p.trial_ends_at ? Math.max(0, Math.ceil((new Date(p.trial_ends_at) - new Date()) / 86400000)) : 0,
+          trialEndsAt: p.trial_ends_at,
+          invoiceCount: userInvs.length,
+          totalBilled: paidTotal,
+          lastActive,
+          status: computeStatus(p.updated_at),
+          signupDate: p.created_at ? p.created_at.split("T")[0] : "",
+          city: p.address || "",
+          health: computeHealth(p.updated_at),
+        };
+      });
+      setUsers(mappedUsers);
+    } catch (err) {
+      console.error("Failed to load admin data:", err);
+    }
+    setDataLoading(false);
+  };
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
@@ -170,6 +241,11 @@ export default function AdminApp() {
     return () => subscription.unsubscribe();
   }, []);
 
+  // Load data when logged in
+  useEffect(() => {
+    if (loggedIn) loadData();
+  }, [loggedIn]);
+
   const showToast = msg => { setToast({msg,visible:true}); setTimeout(()=>setToast(t=>({...t,visible:false})),3000); };
 
   const filteredUsers = users.filter(u => {
@@ -178,22 +254,37 @@ export default function AdminApp() {
     return matchSearch && matchHealth;
   });
 
-  const addSupportNote = (userId) => {
+  const addSupportNote = async (userId) => {
     if(!noteText.trim()) return;
-    const note = { id:Date.now(), text:noteText, date:new Date().toISOString().split("T")[0], admin:ADMIN_EMAIL };
+    const { data, error } = await supabase.from("support_notes").insert({
+      user_id: userId,
+      admin_email: ADMIN_EMAIL,
+      note: noteText.trim(),
+    }).select().single();
+    if (error) { showToast("Error saving note"); console.error(error); return; }
+    const note = { id: data.id, text: data.note, date: data.created_at.split("T")[0], admin: data.admin_email };
     setSupportNotes(prev=>({...prev,[userId]:[note,...(prev[userId]||[])]}));
     setNoteText("");
     showToast("Note saved");
   };
 
-  const extendTrial = (userId, days) => {
-    setUsers(prev=>prev.map(u=>u.id===userId?{...u,trialDays:u.trialDays+days}:u));
+  const extendTrial = async (userId, days) => {
+    const user = users.find(u => u.id === userId);
+    const currentEnd = user?.trialEndsAt ? new Date(user.trialEndsAt) : new Date();
+    const newEnd = new Date(currentEnd.getTime() + days * 86400000);
+    const { error } = await supabase.from("profiles").update({ trial_ends_at: newEnd.toISOString() }).eq("id", userId);
+    if (error) { showToast("Error extending trial"); console.error(error); return; }
+    setUsers(prev=>prev.map(u=>u.id===userId?{...u,trialDays:u.trialDays+days,trialEndsAt:newEnd.toISOString()}:u));
+    if (selectedUser?.id === userId) setSelectedUser(prev => prev ? {...prev, trialDays:prev.trialDays+days, trialEndsAt:newEnd.toISOString()} : prev);
     setExtendId(null);
     showToast(`Trial extended by ${days} days`);
   };
 
-  const upgradePlan = (userId, plan) => {
+  const upgradePlan = async (userId, plan) => {
+    const { error } = await supabase.from("profiles").update({ plan }).eq("id", userId);
+    if (error) { showToast("Error updating plan"); console.error(error); return; }
     setUsers(prev=>prev.map(u=>u.id===userId?{...u,plan}:u));
+    if (selectedUser?.id === userId) setSelectedUser(prev => prev ? {...prev, plan} : prev);
     showToast(`Plan updated to ${plan}`);
   };
 
@@ -202,11 +293,12 @@ export default function AdminApp() {
   const atRiskCount   = users.filter(u=>u.health==="red").length;
   const trialCount    = users.filter(u=>u.plan==="trial").length;
   const paidCount     = users.filter(u=>["starter","growth","pro"].includes(u.plan)).length;
-  const totalInvoices = MOCK_INVOICES.length;
-  const overdueInvs   = MOCK_INVOICES.filter(i=>i.status==="overdue");
+  const totalInvoices = invoices.length;
+  const overdueInvs   = invoices.filter(i=>i.status==="overdue");
 
   if(authLoading) return <div style={{minHeight:"100vh",background:C.sidebar,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontFamily:"-apple-system,sans-serif"}}>Loading...</div>;
   if(!loggedIn) return <LoginPage onLogin={()=>setLoggedIn(true)} />;
+  if(dataLoading) return <div style={{minHeight:"100vh",background:C.bg,display:"flex",alignItems:"center",justifyContent:"center",color:C.text,fontFamily:"-apple-system,sans-serif",fontSize:15}}>Loading admin data...</div>;
 
   const navItems = [
     {id:"dashboard",  icon:"⬛", label:"Dashboard"},
@@ -267,8 +359,8 @@ export default function AdminApp() {
         <div>
           <div style={{fontWeight:600,fontSize:14,marginBottom:12}}>Recent invoices</div>
           <div style={{background:C.card,border:`0.5px solid ${C.border}`,borderRadius:14,overflow:"hidden",boxShadow:"0 1px 3px rgba(0,0,0,0.05)"}}>
-            {MOCK_INVOICES.map((inv,i)=>(
-              <div key={inv.id} style={{display:"grid",gridTemplateColumns:"1fr auto auto",gap:12,padding:"12px 16px",borderBottom:i<MOCK_INVOICES.length-1?`0.5px solid ${C.border}`:"none",alignItems:"center"}}>
+            {invoices.map((inv,i)=>(
+              <div key={inv.id} style={{display:"grid",gridTemplateColumns:"1fr auto auto",gap:12,padding:"12px 16px",borderBottom:i<invoices.length-1?`0.5px solid ${C.border}`:"none",alignItems:"center"}}>
                 <div>
                   <div style={{fontWeight:600,fontSize:13}}>{inv.number}</div>
                   <div style={{fontSize:12,color:C.text2}}>{inv.client}</div>
@@ -344,7 +436,7 @@ export default function AdminApp() {
   };
 
   const renderCustomerDetail = (u) => {
-    const userInvoices = MOCK_INVOICES.filter(inv=>inv.userId===u.id);
+    const userInvoices = invoices.filter(inv => inv.userId === u.id);
     const notes = supportNotes[u.id]||[];
     return (
       <div style={{padding:24,flex:1,overflowY:"auto"}}>
@@ -461,8 +553,8 @@ export default function AdminApp() {
     <div style={{padding:24,flex:1,overflowY:"auto"}}>
       <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12,marginBottom:20}}>
         {[
-          {label:"Total invoices",  value:MOCK_INVOICES.length},
-          {label:"Total collected", value:fmt(MOCK_INVOICES.filter(i=>i.status==="paid").reduce((s,i)=>s+i.amount,0))},
+          {label:"Total invoices",  value:invoices.length},
+          {label:"Total collected", value:fmt(invoices.filter(i=>i.status==="paid").reduce((s,i)=>s+i.amount,0))},
           {label:"Overdue",         value:overdueInvs.length, color:overdueInvs.length>0?C.red:C.text},
         ].map(({label,value,color})=>(
           <div key={label} style={{background:C.card,border:`0.5px solid ${C.border}`,borderRadius:14,padding:"16px 18px",boxShadow:"0 1px 3px rgba(0,0,0,0.05)"}}>
@@ -477,10 +569,10 @@ export default function AdminApp() {
             <span key={h} style={{fontSize:11,color:C.text3,textTransform:"uppercase",letterSpacing:0.6,fontWeight:500}}>{h}</span>
           ))}
         </div>
-        {MOCK_INVOICES.map((inv,i)=>{
-          const user = users.find(u=>u.id===inv.userId);
+        {invoices.map((inv,i)=>{
+          const user = users.find(u => u.id === inv.userId);
           return (
-            <div key={inv.id} style={{display:"grid",gridTemplateColumns:"90px 1fr 1fr 90px 110px",gap:12,padding:"13px 18px",borderBottom:i<MOCK_INVOICES.length-1?`0.5px solid ${C.border}`:"none",alignItems:"center",cursor:"pointer"}}
+            <div key={inv.id} style={{display:"grid",gridTemplateColumns:"90px 1fr 1fr 90px 110px",gap:12,padding:"13px 18px",borderBottom:i<invoices.length-1?`0.5px solid ${C.border}`:"none",alignItems:"center",cursor:"pointer"}}
               onClick={()=>{setSelectedUser(user);setView("customers");}}>
               <span style={{fontWeight:600,fontSize:13}}>{inv.number}</span>
               <span style={{fontSize:12,color:C.text2}}>{user?.email||"—"}</span>
@@ -534,25 +626,28 @@ export default function AdminApp() {
 
   const renderSignups = () => (
     <div style={{padding:24,flex:1,overflowY:"auto"}}>
-      <div style={{fontWeight:600,fontSize:14,marginBottom:14}}>Beta signups — {users.length} total</div>
+      <div style={{fontWeight:600,fontSize:14,marginBottom:14}}>Signups — {signups.length} total</div>
       <div style={{background:C.card,border:`0.5px solid ${C.border}`,borderRadius:14,overflow:"hidden",boxShadow:"0 1px 3px rgba(0,0,0,0.05)"}}>
         <div style={{display:"grid",gridTemplateColumns:"1.8fr 1fr 80px 100px 80px",gap:12,padding:"9px 18px",borderBottom:`0.5px solid ${C.border}`,background:C.bg2}}>
-          {["Company","Email","Plan","Signed up","Actions"].map(h=>(
+          {["Company","Email","Status","Signed up","Source"].map(h=>(
             <span key={h} style={{fontSize:11,color:C.text3,textTransform:"uppercase",letterSpacing:0.6,fontWeight:500}}>{h}</span>
           ))}
         </div>
-        {users.map((u,i)=>(
-          <div key={u.id} style={{display:"grid",gridTemplateColumns:"1.8fr 1fr 80px 100px 80px",gap:12,padding:"12px 18px",borderBottom:i<users.length-1?`0.5px solid ${C.border}`:"none",alignItems:"center"}}>
+        {signups.map((s,i)=>(
+          <div key={s.id} style={{display:"grid",gridTemplateColumns:"1.8fr 1fr 80px 100px 80px",gap:12,padding:"12px 18px",borderBottom:i<signups.length-1?`0.5px solid ${C.border}`:"none",alignItems:"center"}}>
             <div>
-              <div style={{fontWeight:600,fontSize:13}}>{u.company}</div>
-              <div style={{fontSize:12,color:C.text2}}>{u.city}</div>
+              <div style={{fontWeight:600,fontSize:13}}>{s.company || "—"}</div>
+              {s.notes && <div style={{fontSize:12,color:C.text2}}>{s.notes}</div>}
             </div>
-            <div style={{fontSize:12,color:C.text2}}>{u.email}</div>
-            <Badge status={u.plan} />
-            <div style={{fontSize:12,color:C.text3}}>{fmtDate(u.signupDate)}</div>
-            <Btn sm onClick={()=>{setSelectedUser(u);setView("customers");}}>View</Btn>
+            <div style={{fontSize:12,color:C.text2}}>{s.email}</div>
+            <Badge status={s.status || "waitlist"} />
+            <div style={{fontSize:12,color:C.text3}}>{fmtDate(s.created_at ? s.created_at.split("T")[0] : "")}</div>
+            <div style={{fontSize:12,color:C.text3}}>{s.source || "—"}</div>
           </div>
         ))}
+        {signups.length === 0 && (
+          <div style={{textAlign:"center",color:C.text3,padding:32,fontSize:13}}>No signups yet.</div>
+        )}
       </div>
     </div>
   );
