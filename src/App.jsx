@@ -197,10 +197,23 @@ function AuthGate() {
   const handleAuth = async (e) => {
     e.preventDefault();
     setAuthError("");
-    const { error } = authMode === "login"
-      ? await supabase.auth.signInWithPassword({ email: authEmail, password: authPass })
-      : await supabase.auth.signUp({ email: authEmail, password: authPass });
-    if (error) setAuthError(error.message);
+    if (authMode === "login") {
+      const { error } = await supabase.auth.signInWithPassword({ email: authEmail, password: authPass });
+      if (error) setAuthError(error.message);
+    } else {
+      const { data, error } = await supabase.auth.signUp({ email: authEmail, password: authPass });
+      if (error) {
+        if (error.message.toLowerCase().includes("already registered") || error.message.toLowerCase().includes("already exists")) {
+          setAuthError("An account with this email already exists. Redirecting to sign in...");
+          setTimeout(() => { setAuthMode("login"); setAuthError(""); }, 2000);
+        } else {
+          setAuthError(error.message);
+        }
+      } else if (data?.user?.identities?.length === 0) {
+        setAuthError("An account with this email already exists. Redirecting to sign in...");
+        setTimeout(() => { setAuthMode("login"); setAuthError(""); }, 2000);
+      }
+    }
   };
 
   if (authLoading) return <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", fontFamily: "-apple-system,sans-serif", color: C.text3 }}>Loading...</div>;
