@@ -72,8 +72,8 @@ exports.handler = async (event) => {
       subscription_data: {
         metadata: { user_id: userId, plan },
       },
-      success_url: `${appUrl}?subscription=success&plan=${plan}`,
-      cancel_url: `${appUrl}?subscription=cancelled`,
+      success_url: `${appUrl}/app?subscription=success&plan=${plan}`,
+      cancel_url: `${appUrl}/app?subscription=cancelled`,
     });
 
     console.log(`Subscription checkout created: ${plan} for ${email}`);

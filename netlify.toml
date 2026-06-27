@@ -11,6 +11,12 @@
   node_bundler = "esbuild"
   external_node_modules = ["stripe"]
 
+# Landing page is the homepage
+[[redirects]]
+  from = "/"
+  to = "/home.html"
+  status = 200
+
 # API routes → Netlify Functions
 [[redirects]]
   from = "/api/*"
@@ -23,7 +29,18 @@
   to = "/.netlify/functions/get-invoice"
   status = 200
 
-# SPA fallback — all other routes serve React app
+# React app at /app (and all sub-routes)
+[[redirects]]
+  from = "/app/*"
+  to = "/index.html"
+  status = 200
+
+[[redirects]]
+  from = "/app"
+  to = "/index.html"
+  status = 200
+
+# SPA fallback for other routes
 [[redirects]]
   from = "/*"
   to = "/index.html"
